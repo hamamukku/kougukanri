@@ -37,8 +37,8 @@ function createInitialTools() {
 let tools = loadTools() ?? createInitialTools();
 
 const warehouses = [
-  { id: "w1", name: "隨ｬ荳蛟牙ｺｫ" },
-  { id: "w2", name: "隨ｬ莠悟牙ｺｫ" },
+  { id: "w1", name: "\u7b2c\u4e00\u5009\u5eab" },
+  { id: "w2", name: "\u7b2c\u4e8c\u5009\u5eab" },
 ];
 
 export const handlers = [

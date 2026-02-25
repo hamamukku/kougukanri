@@ -1,9 +1,16 @@
 import { http, HttpResponse, delay } from "msw";
 
-const tools = [
-  { id: "t1", name: "インパクトドライバー", warehouseId: "w1", status: "available" },
-  { id: "t2", name: "丸ノコ", warehouseId: "w1", status: "loaned" },
-];
+const statuses = ["available", "loaned", "repairing", "lost"] as const;
+
+const tools = Array.from({ length: 60 }).map((_, i) => {
+  const n = i + 1;
+  const id = `t${n}`;
+  const name = `工具${String(n).padStart(3, "0")}`;
+  const warehouseId = n % 2 === 0 ? "w1" : "w2";
+  const status = statuses[n % statuses.length];
+
+  return { id, name, warehouseId, status };
+});
 
 const warehouses = [
   { id: "w1", name: "第一倉庫" },

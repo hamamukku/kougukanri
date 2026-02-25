@@ -2,15 +2,39 @@ import { http, HttpResponse, delay } from "msw";
 
 const statuses = ["available", "loaned", "repairing", "lost"] as const;
 
-let tools = Array.from({ length: 60 }).map((_, i) => {
-  const n = i + 1;
-  const id = `t${n}`;
-  const name = `工具${String(n).padStart(3, "0")}`;
-  const warehouseId = n % 2 === 0 ? "w1" : "w2";
-  const status = statuses[n % statuses.length];
+const TOOLS_STORAGE_KEY = "msw_tools_state_v1";
 
-  return { id, name, warehouseId, status };
-});
+function loadTools(): any[] | null {
+  try {
+    const raw = localStorage.getItem(TOOLS_STORAGE_KEY);
+    if (!raw) return null;
+    const arr = JSON.parse(raw) as unknown;
+    return Array.isArray(arr) ? (arr as any[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveTools(next: any[]) {
+  try {
+    localStorage.setItem(TOOLS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+function createInitialTools() {
+  return Array.from({ length: 60 }).map((_, i) => {
+    const n = i + 1;
+    const id = `t${n}`;
+    const name = `工具${String(n).padStart(3, "0")}`;
+    const warehouseId = n % 2 === 0 ? "w1" : "w2";
+    const status = statuses[n % statuses.length];
+    return { id, name, warehouseId, status };
+  });
+}
+
+let tools = loadTools() ?? createInitialTools();
 
 const warehouses = [
   { id: "w1", name: "第一倉庫" },
@@ -35,6 +59,7 @@ export const handlers = [
       return HttpResponse.json({ ok: false, message: "tool is not loaned" }, { status: 400 });
     }
     tools[idx] = { ...tools[idx], status: "available" };
+    saveTools(tools);
     return HttpResponse.json({ ok: true, tool: tools[idx] });
   }),
 ];

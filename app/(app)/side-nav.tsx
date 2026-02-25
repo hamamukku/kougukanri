@@ -8,8 +8,8 @@ type Props = { role: "user" | "admin" };
 type MenuItem = { href: string; label: string };
 
 export default function SideNav({ role }: Props) {
-  const { loanBoxIds } = useLoanBox();
-  const count = loanBoxIds.size;
+  const { selectedToolIds } = useLoanBox();
+  const count = selectedToolIds.size;
 
   const userMenu: MenuItem[] = [
     { href: "/tools", label: "工具一覧" },

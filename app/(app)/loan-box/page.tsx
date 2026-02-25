@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "../../../src/components/ui/Button";
+import Input from "../../../src/components/ui/Input";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
 
@@ -22,6 +23,8 @@ export default function LoanBoxPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [borrower, setBorrower] = useState("");
+  const [note, setNote] = useState("");
 
   const { loanBoxIds, removeFromLoanBox, clearLoanBox } = useLoanBox();
 
@@ -65,7 +68,11 @@ export default function LoanBoxPage() {
       const res = await fetch("/api/loans/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: loanBoxIdsList }),
+        body: JSON.stringify({
+          ids: loanBoxIdsList,
+          borrower,
+          note,
+        }),
       });
 
       if (!res.ok) {
@@ -78,6 +85,8 @@ export default function LoanBoxPage() {
       }
 
       clearLoanBox();
+      setBorrower("");
+      setNote("");
       await loadData();
       setErr(null);
       alert("貸出を登録しました");
@@ -94,18 +103,38 @@ export default function LoanBoxPage() {
     <main style={{ padding: 16 }}>
       <h1>貸出ボックス</h1>
       <div style={{ marginTop: 12, marginBottom: 12, display: "flex", gap: 8 }}>
-        <Button type="button" variant="ghost" disabled={loanBoxTools.length === 0 || submitting} onClick={onCheckout}>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={loanBoxTools.length === 0 || submitting || borrower.trim().length === 0}
+          onClick={onCheckout}
+        >
           貸出実行
         </Button>
-        <Button type="button" variant="ghost" disabled={loanBoxTools.length === 0 || submitting} onClick={clearLoanBox}>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={loanBoxTools.length === 0 || submitting}
+          onClick={clearLoanBox}
+        >
           箱を空にする
         </Button>
       </div>
-      {err ? (
-        <p style={{ color: "#b91c1c", marginBottom: 12 }}>error: {err}</p>
-      ) : null}
 
-      {loanBoxTools.length === 0 ? <p>貸出ボックスは空です</p> : (
+      <div style={{ display: "grid", gap: 8, maxWidth: 480, marginBottom: 12 }}>
+        <Input
+          value={borrower}
+          onChange={(e) => setBorrower(e.target.value)}
+          placeholder="例: 田中（A現場）"
+        />
+        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="備考（任意）" />
+      </div>
+
+      {err ? <p style={{ color: "#b91c1c", marginBottom: 12 }}>error: {err}</p> : null}
+
+      {loanBoxTools.length === 0 ? (
+        <p>貸出ボックスは空です</p>
+      ) : (
         <Table>
           <thead>
             <tr>

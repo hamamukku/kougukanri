@@ -6,6 +6,7 @@ import Button from "../../../src/components/ui/Button";
 import Input from "../../../src/components/ui/Input";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 import { statusLabel } from "../../../src/utils/format";
+import { HttpError, apiFetchJson } from "../../../src/utils/http";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
 
 type ToolStatus = "available" | "loaned" | "repairing" | "lost";
@@ -43,19 +44,34 @@ export default function LoanBoxPage() {
   const router = useRouter();
   const { selectedToolIds, clearSelection } = useLoanBox();
 
+  const handleApiError = (error: unknown): string | null => {
+    if (!(error instanceof HttpError)) return "通信に失敗しました";
+
+    if (error.status === 401) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    if (error.status === 403) {
+      window.location.href = "/tools";
+      return null;
+    }
+
+    return error.message || "通信に失敗しました";
+  };
+
   const loadData = useCallback(async () => {
     try {
-      const [toolRes, warehouseRes] = await Promise.all([fetch("/api/tools"), fetch("/api/warehouses")]);
-      if (!toolRes.ok) throw new Error(`/api/tools ${toolRes.status}`);
-      if (!warehouseRes.ok) throw new Error(`/api/warehouses ${warehouseRes.status}`);
-
-      const toolData = (await toolRes.json()) as Tool[];
-      const warehouseData = (await warehouseRes.json()) as Warehouse[];
+      const [toolData, warehouseData] = await Promise.all([
+        apiFetchJson<Tool[]>("/api/tools"),
+        apiFetchJson<Warehouse[]>("/api/warehouses"),
+      ]);
       setTools(toolData);
       setWarehouses(warehouseData);
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     } finally {
       setLoading(false);
     }
@@ -115,7 +131,7 @@ export default function LoanBoxPage() {
         if (value) payloadOverrides[toolId] = value;
       }
 
-      const res = await fetch("/api/boxes/confirm", {
+      await apiFetchJson<{ ok: true } & Record<string, unknown>>("/api/boxes/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -125,20 +141,15 @@ export default function LoanBoxPage() {
           dueOverrides: payloadOverrides,
         }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const msg =
-          body && typeof body === "object" && "message" in body
-            ? String((body as { message?: unknown }).message)
-            : `confirm failed ${res.status}`;
-        throw new Error(msg);
-      }
+        }),
+      });
 
       clearSelection();
       setDueOverrides({});
       router.push("/my-loans");
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     } finally {
       setSubmitting(false);
     }

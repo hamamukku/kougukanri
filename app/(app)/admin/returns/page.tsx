@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import { formatDateJa } from "../../../../src/utils/format";
 import { Table, Td, Th } from "../../../../src/components/ui/Table";
+import { HttpError, apiFetchJson } from "../../../../src/utils/http";
 
 type AdminReturnGroup = {
   boxId: string;
@@ -35,20 +36,34 @@ export default function AdminReturnsPage() {
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
   const [selectedToolIdsByBox, setSelectedToolIdsByBox] = useState<Record<string, Set<string>>>({});
 
+  const handleApiError = (error: unknown): string | null => {
+    if (!(error instanceof HttpError)) return "通信に失敗しました";
+
+    if (error.status === 401) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    if (error.status === 403) {
+      return error.message || "権限がありません";
+    }
+
+    return error.message || "通信に失敗しました";
+  };
+
   const loadData = useCallback(async () => {
     try {
-      const [returnsRes, warehouseRes] = await Promise.all([fetch("/api/admin/returns"), fetch("/api/warehouses")]);
-      if (!returnsRes.ok) throw new Error(`/api/admin/returns ${returnsRes.status}`);
-      if (!warehouseRes.ok) throw new Error(`/api/warehouses ${warehouseRes.status}`);
-
-      const r = (await returnsRes.json()) as AdminReturnGroup[];
-      const w = (await warehouseRes.json()) as Warehouse[];
+      const [r, w] = await Promise.all([
+        apiFetchJson<AdminReturnGroup[]>("/api/admin/returns"),
+        apiFetchJson<Warehouse[]>("/api/warehouses"),
+      ]);
       setGroups(r.map((group) => ({ ...group, items: group.items || [] })).sort((a, b) => b.boxNo - a.boxNo));
       setWarehouses(w);
       setSelectedToolIdsByBox({});
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     } finally {
       setLoading(false);
     }
@@ -83,19 +98,11 @@ export default function AdminReturnsPage() {
     setSubmitting((prev) => new Set(prev).add(boxId));
     try {
       const body = toolIds ? { boxId, toolIds } : { boxId };
-      const res = await fetch("/api/admin/returns/approve", {
+      await apiFetchJson<{ ok: true } & Record<string, unknown>>("/api/admin/returns/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const msg =
-          body && typeof body === "object" && "message" in body
-            ? String((body as { message?: unknown }).message)
-            : `approve failed ${res.status}`;
-        throw new Error(msg);
-      }
       await loadData();
       if (isPartial) {
         setSelectedToolIdsByBox((prev) => {
@@ -105,7 +112,8 @@ export default function AdminReturnsPage() {
         });
       }
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     } finally {
       setSubmitting((prev) => {
         const next = new Set(prev);
@@ -123,7 +131,7 @@ export default function AdminReturnsPage() {
   };
 
   if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><pre>error: {err}</pre></main>;
+  if (err) return <main style={{ padding: 16 }}><p style={{ color: "#b91c1c" }}>error: {err}</p></main>;
 
   return (
     <main style={{ padding: 16 }}>

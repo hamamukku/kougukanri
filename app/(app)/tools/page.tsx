@@ -6,6 +6,7 @@ import Input from "../../../src/components/ui/Input";
 import Select from "../../../src/components/ui/Select";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 import { statusLabel } from "../../../src/utils/format";
+import { HttpError, apiFetchJson } from "../../../src/utils/http";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
 
 type ToolStatus = "available" | "loaned" | "repairing" | "lost";
@@ -41,20 +42,39 @@ export default function ToolsPage() {
 
   const { selectedToolIds, addToSelection, removeFromSelection, hasInSelection } = useLoanBox();
 
+  const handleApiError = (error: unknown): string | null => {
+    if (!(error instanceof HttpError)) return "通信に失敗しました";
+
+    if (error.status === 401) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    if (error.status === 403) {
+      window.location.href = "/tools";
+      return null;
+    }
+
+    if (error.status === 409 || error.status === 422) {
+      return error.message || "リクエストが競合しました";
+    }
+
+    return error.message || "通信に失敗しました";
+  };
+
   useEffect(() => {
     (async () => {
       try {
-        const [toolRes, warehouseRes] = await Promise.all([fetch("/api/tools"), fetch("/api/warehouses")]);
-        if (!toolRes.ok) throw new Error(`/api/tools ${toolRes.status}`);
-        if (!warehouseRes.ok) throw new Error(`/api/warehouses ${warehouseRes.status}`);
-
-        const toolData = (await toolRes.json()) as Tool[];
-        const warehouseData = (await warehouseRes.json()) as Warehouse[];
+        const [toolData, warehouseData] = await Promise.all([
+          apiFetchJson<Tool[]>("/api/tools"),
+          apiFetchJson<Warehouse[]>("/api/warehouses"),
+        ]);
         setTools(toolData);
         setWarehouses(warehouseData);
         setErr(null);
       } catch (e: unknown) {
-        setErr(e instanceof Error ? e.message : String(e));
+        const message = handleApiError(e);
+        if (message) setErr(message);
       } finally {
         setLoading(false);
       }
@@ -112,7 +132,7 @@ export default function ToolsPage() {
   };
 
   if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><pre>error: {err}</pre></main>;
+  if (err) return <main style={{ padding: 16 }}><p style={{ color: "#b91c1c" }}>error: {err}</p></main>;
 
   return (
     <main style={{ padding: 16 }}>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
+import { HttpError, apiFetchJson } from "../../../../src/utils/http";
 
 type AdminUser = {
   id: string;
@@ -15,15 +16,29 @@ export default function AdminUsersPage() {
   const [username, setUsername] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
+  const handleApiError = (error: unknown): string | null => {
+    if (!(error instanceof HttpError)) return "通信に失敗しました";
+
+    if (error.status === 401) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    if (error.status === 403) {
+      return error.message || "権限がありません";
+    }
+
+    return error.message || "通信に失敗しました";
+  };
+
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/users");
-      if (!res.ok) throw new Error(`/api/admin/users ${res.status}`);
-      const data = (await res.json()) as AdminUser[];
+      const data = await apiFetchJson<AdminUser[]>("/api/admin/users");
       setUsers(data);
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     } finally {
       setLoading(false);
     }
@@ -36,23 +51,16 @@ export default function AdminUsersPage() {
   const onAdd = async () => {
     if (!username.trim()) return;
     try {
-      const res = await fetch("/api/admin/users", {
+      await apiFetchJson<{ ok: true } & Record<string, unknown>>("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: username.trim() }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const msg =
-          body && typeof body === "object" && "message" in body
-            ? String((body as { message?: unknown }).message)
-            : `add failed ${res.status}`;
-        throw new Error(msg);
-      }
       setUsername("");
       await loadData();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     }
   };
 

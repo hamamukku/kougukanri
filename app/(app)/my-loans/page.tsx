@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "../../../src/components/ui/Button";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 import { statusLabel } from "../../../src/utils/format";
+import { HttpError, apiFetchJson } from "../../../src/utils/http";
 
 type MyBox = {
   box: {
@@ -40,17 +41,28 @@ export default function MyLoansPage() {
   const [err, setErr] = useState<string | null>(null);
   const [requesting, setRequesting] = useState<Set<string>>(new Set());
 
+  const handleApiError = (error: unknown, options: { onForbiddenRedirect?: boolean } = {}): string | null => {
+    if (!(error instanceof HttpError)) return "通信に失敗しました";
+
+    if (error.status === 401) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    if (error.status === 403 && options.onForbiddenRedirect) {
+      window.location.href = "/tools";
+      return null;
+    }
+
+    return error.message || "通信に失敗しました";
+  };
+
   const loadData = useCallback(async () => {
     try {
-      const [myBoxesRes, warehouseRes] = await Promise.all([
-        fetch("/api/my/boxes?status=open"),
-        fetch("/api/warehouses"),
+      const [b, w] = await Promise.all([
+        apiFetchJson<MyBox[]>("/api/my/boxes?status=open"),
+        apiFetchJson<Warehouse[]>("/api/warehouses"),
       ]);
-      if (!myBoxesRes.ok) throw new Error(`/api/my/boxes ${myBoxesRes.status}`);
-      if (!warehouseRes.ok) throw new Error(`/api/warehouses ${warehouseRes.status}`);
-
-      const b = (await myBoxesRes.json()) as MyBox[];
-      const w = (await warehouseRes.json()) as Warehouse[];
       setBoxes(
         b
           .map((entry) => ({ ...entry, items: entry.items || [] }))
@@ -59,7 +71,8 @@ export default function MyLoansPage() {
       setWarehouses(w);
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e, { onForbiddenRedirect: true });
+      if (message) setErr(message);
     } finally {
       setLoading(false);
     }
@@ -79,22 +92,16 @@ export default function MyLoansPage() {
     const key = `${boxId}:${toolId}`;
     setRequesting((prev) => new Set(prev).add(key));
     try {
-      const res = await fetch("/api/my/returns/request", {
+      await apiFetchJson<{ ok: true } & Record<string, unknown>>("/api/my/returns/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ boxId, toolId }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const msg =
-          body && typeof body === "object" && "message" in body
-            ? String((body as { message?: unknown }).message)
-            : `request failed ${res.status}`;
-        throw new Error(msg);
-      }
+      void res;
       await loadData();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e, { onForbiddenRedirect: true });
+      if (message) setErr(message);
     } finally {
       setRequesting((prev) => {
         const next = new Set(prev);
@@ -105,7 +112,7 @@ export default function MyLoansPage() {
   };
 
   if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><pre>error: {err}</pre></main>;
+  if (err) return <main style={{ padding: 16 }}><p style={{ color: "#b91c1c" }}>error: {err}</p></main>;
 
   return (
     <main style={{ padding: 16 }}>

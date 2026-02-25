@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
+import { HttpError, apiFetchJson } from "../../../../src/utils/http";
 
 type Warehouse = {
   id: string;
@@ -15,15 +16,29 @@ export default function AdminWarehousesPage() {
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
+  const handleApiError = (error: unknown): string | null => {
+    if (!(error instanceof HttpError)) return "通信に失敗しました";
+
+    if (error.status === 401) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    if (error.status === 403) {
+      return error.message || "権限がありません";
+    }
+
+    return error.message || "通信に失敗しました";
+  };
+
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/warehouses");
-      if (!res.ok) throw new Error(`/api/admin/warehouses ${res.status}`);
-      const data = (await res.json()) as Warehouse[];
+      const data = await apiFetchJson<Warehouse[]>("/api/admin/warehouses");
       setWarehouses(data);
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     } finally {
       setLoading(false);
     }
@@ -36,23 +51,16 @@ export default function AdminWarehousesPage() {
   const onAdd = async () => {
     if (!name.trim()) return;
     try {
-      const res = await fetch("/api/admin/warehouses", {
+      await apiFetchJson<{ ok: true } & Record<string, unknown>>("/api/admin/warehouses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const msg =
-          body && typeof body === "object" && "message" in body
-            ? String((body as { message?: unknown }).message)
-            : `add failed ${res.status}`;
-        throw new Error(msg);
-      }
       setName("");
       await loadData();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     }
   };
 

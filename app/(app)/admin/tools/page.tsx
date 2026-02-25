@@ -5,6 +5,7 @@ import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
 import { statusLabel } from "../../../../src/utils/format";
 import { Table, Td, Th } from "../../../../src/components/ui/Table";
+import { HttpError, apiFetchJson } from "../../../../src/utils/http";
 
 type Warehouse = {
   id: string;
@@ -32,19 +33,34 @@ export default function AdminToolsPage() {
   const [warehouseId, setWarehouseId] = useState("");
   const [status, setStatus] = useState<ToolStatus>("available");
 
+  const handleApiError = (error: unknown): string | null => {
+    if (!(error instanceof HttpError)) return "通信に失敗しました";
+
+    if (error.status === 401) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    if (error.status === 403) {
+      return error.message || "権限がありません";
+    }
+
+    return error.message || "通信に失敗しました";
+  };
+
   const loadData = useCallback(async () => {
     try {
-      const [tRes, wRes] = await Promise.all([fetch("/api/admin/tools"), fetch("/api/admin/warehouses")]);
-      if (!tRes.ok) throw new Error(`/api/admin/tools ${tRes.status}`);
-      if (!wRes.ok) throw new Error(`/api/admin/warehouses ${wRes.status}`);
-      const t = (await tRes.json()) as Tool[];
-      const w = (await wRes.json()) as Warehouse[];
+      const [t, w] = await Promise.all([
+        apiFetchJson<Tool[]>("/api/admin/tools"),
+        apiFetchJson<Warehouse[]>("/api/admin/warehouses"),
+      ]);
       setTools(t);
       setWarehouses(w);
       if (!warehouseId && w.length > 0) setWarehouseId(w[0].id);
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     } finally {
       setLoading(false);
     }
@@ -63,7 +79,7 @@ export default function AdminToolsPage() {
   const onAdd = async () => {
     if (!name.trim() || !warehouseId) return;
     try {
-      const res = await fetch("/api/admin/tools", {
+      await apiFetchJson<{ ok: true } & Record<string, unknown>>("/api/admin/tools", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -73,20 +89,13 @@ export default function AdminToolsPage() {
           status,
         }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const msg =
-          body && typeof body === "object" && "message" in body
-            ? String((body as { message?: unknown }).message)
-            : `add failed ${res.status}`;
-        throw new Error(msg);
-      }
       setName("");
       setAssetNo("");
       setStatus("available");
       await loadData();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const message = handleApiError(e);
+      if (message) setErr(message);
     }
   };
 

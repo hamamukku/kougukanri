@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatDateJa } from "../../../src/utils/format";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 
 type Tool = {
@@ -97,7 +98,12 @@ export default function MyLoansPage() {
         borrower: string;
         loanedAt: string;
       } => row !== null
-    );
+    )
+    .sort((a, b) => {
+      const dtA = new Date(a.loanedAt).getTime();
+      const dtB = new Date(b.loanedAt).getTime();
+      return dtB - dtA;
+    });
 
   return (
     <main style={{ padding: 16 }}>
@@ -121,7 +127,7 @@ export default function MyLoansPage() {
                 <Td>{row.name}</Td>
                 <Td>{warehouseNameById.get(row.warehouseId) ?? row.warehouseId}</Td>
                 <Td>{row.borrower}</Td>
-                <Td>{fmt(row.loanedAt)}</Td>
+                <Td>{formatDateJa(row.loanedAt)}</Td>
               </tr>
             ))}
           </tbody>
@@ -130,8 +136,3 @@ export default function MyLoansPage() {
     </main>
   );
 }
-
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ja-JP");
-};

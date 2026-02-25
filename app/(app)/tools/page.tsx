@@ -6,6 +6,7 @@ import Input from "../../../src/components/ui/Input";
 import Select from "../../../src/components/ui/Select";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
+import { statusLabel } from "../../../src/utils/format";
 
 type Tool = {
   id: string;
@@ -183,7 +184,7 @@ export default function ToolsPage() {
               <tr key={t.id}>
                 <Td>{t.name}</Td>
                 <Td>{warehouseNameById.get(t.warehouseId) ?? t.warehouseId}</Td>
-                <Td>{t.status}</Td>
+                <Td>{statusLabel(t.status)}</Td>
                 <Td>
                   <Button type="button" disabled={disabled} onClick={() => addToLoanBox(t.id)}>
                     {label}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "../../../src/components/ui/Button";
 import Input from "../../../src/components/ui/Input";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
+import { getCookie } from "../../../src/utils/format";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
 
 type Tool = {
@@ -50,6 +51,12 @@ export default function LoanBoxPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (borrower.trim()) return;
+    const u = getCookie("username");
+    if (u) setBorrower(u);
+  }, []);
 
   const warehouseNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -156,7 +163,7 @@ export default function LoanBoxPage() {
                   </Button>
                 </Td>
               </tr>
-            ))}
+              ))}
           </tbody>
         </Table>
       )}

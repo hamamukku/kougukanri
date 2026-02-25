@@ -1,17 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Button from "../../../src/components/ui/Button";
 import Input from "../../../src/components/ui/Input";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
-import { getCookie } from "../../../src/utils/format";
+import { statusLabel } from "../../../src/utils/format";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
+
+type ToolStatus = "available" | "loaned" | "repairing" | "lost";
 
 type Tool = {
   id: string;
   name: string;
+  assetNo: string;
   warehouseId: string;
-  status: string;
+  status: ToolStatus;
 };
 
 type Warehouse = {
@@ -19,8 +23,7 @@ type Warehouse = {
   name: string;
 };
 
-const BORROWER_DRAFT_KEY = "loanBoxBorrowerDraft_v1";
-const NOTE_DRAFT_KEY = "loanBoxNoteDraft_v1";
+type DueOverrides = Record<string, string>;
 
 export default function LoanBoxPage() {
   const [tools, setTools] = useState<Tool[]>([]);
@@ -28,22 +31,28 @@ export default function LoanBoxPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [borrower, setBorrower] = useState("");
-  const [note, setNote] = useState("");
 
-  const { loanBoxIds, removeFromLoanBox, clearLoanBox } = useLoanBox();
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().slice(0, 10);
+  });
+  const [dueOverrides, setDueOverrides] = useState<DueOverrides>({});
+
+  const router = useRouter();
+  const { selectedToolIds, clearSelection } = useLoanBox();
 
   const loadData = useCallback(async () => {
     try {
-      const [tRes, wRes] = await Promise.all([fetch("/api/tools"), fetch("/api/warehouses")]);
+      const [toolRes, warehouseRes] = await Promise.all([fetch("/api/tools"), fetch("/api/warehouses")]);
+      if (!toolRes.ok) throw new Error(`/api/tools ${toolRes.status}`);
+      if (!warehouseRes.ok) throw new Error(`/api/warehouses ${warehouseRes.status}`);
 
-      if (!tRes.ok) throw new Error(`/api/tools ${tRes.status}`);
-      if (!wRes.ok) throw new Error(`/api/warehouses ${wRes.status}`);
-
-      const t = (await tRes.json()) as Tool[];
-      const w = (await wRes.json()) as Warehouse[];
-      setTools(t);
-      setWarehouses(w);
+      const toolData = (await toolRes.json()) as Tool[];
+      const warehouseData = (await warehouseRes.json()) as Warehouse[];
+      setTools(toolData);
+      setWarehouses(warehouseData);
       setErr(null);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -56,72 +65,78 @@ export default function LoanBoxPage() {
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    try {
-      const b = localStorage.getItem(BORROWER_DRAFT_KEY) || "";
-      const n = localStorage.getItem(NOTE_DRAFT_KEY) || "";
-
-      if (b.trim()) {
-        setBorrower(b);
-      } else {
-        const u = getCookie("username") || "";
-        if (u.trim()) {
-          setBorrower(u);
-        }
-      }
-
-      if (n.trim()) {
-        setNote(n);
-      }
-    } catch {
-      // no-op
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const warehouseNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const w of warehouses) m.set(w.id, w.name);
     return m;
   }, [warehouses]);
 
-  const loanBoxTools = useMemo(() => tools.filter((t) => loanBoxIds.has(t.id)), [tools, loanBoxIds]);
-  const loanBoxToolIds = useMemo(() => loanBoxTools.map((t) => t.id), [loanBoxTools]);
-  const hasNonAvailable = useMemo(() => loanBoxTools.some((t) => t.status !== "available"), [loanBoxTools]);
+  const loanBoxTools = useMemo(() => tools.filter((tool) => selectedToolIds.has(tool.id)), [tools, selectedToolIds]);
+
+  useEffect(() => {
+    setDueOverrides((prev) => {
+      const next: DueOverrides = {};
+      for (const tool of loanBoxTools) {
+        if (prev[tool.id]) next[tool.id] = prev[tool.id];
+      }
+      return next;
+    });
+  }, [loanBoxTools]);
+
+  const invalidOverride = useMemo(() => {
+    return loanBoxTools.some((tool) => {
+      const override = dueOverrides[tool.id]?.trim();
+      if (!override) return false;
+      return override < startDate || override > dueDate;
+    });
+  }, [dueOverrides, loanBoxTools, startDate, dueDate]);
+
+  const hasUnavailable = useMemo(() => loanBoxTools.some((tool) => tool.status !== "available"), [loanBoxTools]);
   const checkoutDisabled =
-    loanBoxTools.length === 0 || submitting || hasNonAvailable || borrower.trim().length === 0;
+    submitting ||
+    loanBoxTools.length === 0 ||
+    !startDate ||
+    !dueDate ||
+    dueDate < startDate ||
+    invalidOverride ||
+    hasUnavailable;
 
   const onCheckout = async () => {
+    if (checkoutDisabled) return;
+    if (!window.confirm("貸出内容を確定しますか？")) return;
+
     setSubmitting(true);
+    setErr(null);
     try {
-      const res = await fetch("/api/loans/checkout", {
+      const toolIds = loanBoxTools.map((tool) => tool.id);
+      const payloadOverrides: DueOverrides = {};
+      for (const toolId of toolIds) {
+        const value = dueOverrides[toolId]?.trim();
+        if (value) payloadOverrides[toolId] = value;
+      }
+
+      const res = await fetch("/api/boxes/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ids: loanBoxToolIds,
-          borrower,
-          note,
+          startDate,
+          dueDate,
+          toolIds,
+          dueOverrides: payloadOverrides,
         }),
       });
-
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         const msg =
           body && typeof body === "object" && "message" in body
             ? String((body as { message?: unknown }).message)
-            : `checkout failed ${res.status}`;
+            : `confirm failed ${res.status}`;
         throw new Error(msg);
       }
 
-      try {
-        localStorage.removeItem(BORROWER_DRAFT_KEY);
-        localStorage.removeItem(NOTE_DRAFT_KEY);
-      } catch {}
-
-      clearLoanBox();
-      await loadData();
-      setErr(null);
-      alert("\u8cb8\u51fa\u3092\u767b\u9332\u3057\u307e\u3057\u305f");
+      clearSelection();
+      setDueOverrides({});
+      router.push("/my-loans");
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -133,57 +148,66 @@ export default function LoanBoxPage() {
 
   return (
     <main style={{ padding: 16 }}>
-      <h1>{"\u8cb8\u51fa\u30dc\u30c3\u30af\u30b9"}</h1>
+      <h1>貸出ボックス</h1>
 
-      <div style={{ marginTop: 12, marginBottom: 12, display: "flex", gap: 8 }}>
-        <Button type="button" variant="ghost" disabled={checkoutDisabled} onClick={onCheckout}>
-          {"\u8cb8\u51fa\u5b9f\u884c"}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={loanBoxTools.length === 0 || submitting}
-          onClick={clearLoanBox}
-        >
-          {"\u7bb1\u3092\u7a7a\u306b\u3059\u308b"}
+      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 12, marginBottom: 4 }}>開始日</div>
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, marginBottom: 4 }}>返却期限</div>
+          <Input type="date" value={dueDate} min={startDate} onChange={(e) => setDueDate(e.target.value)} />
+        </div>
+        <Button type="button" disabled={checkoutDisabled} onClick={onCheckout}>
+          確認
         </Button>
       </div>
 
-      {hasNonAvailable ? (
-        <p style={{ color: "#b91c1c", marginBottom: 12 }}>
-          {"\u8cb8\u51fa\u3067\u304d\u306a\u3044\u72b6\u614b\u306e\u5de5\u5177\u304c\u542b\u307e\u308c\u3066\u3044\u307e\u3059\uff08available\u306e\u307f\u8cb8\u51fa\u53ef\uff09"}
+      {dueDate < startDate && <p style={{ color: "#b91c1c", marginTop: 12 }}>返却期限は開始日以降で指定してください</p>}
+      {invalidOverride && (
+        <p style={{ color: "#b91c1c", marginTop: 12 }}>期間上書き日付が期限範囲外です</p>
+      )}
+      {hasUnavailable && (
+        <p style={{ color: "#b91c1c", marginTop: 12 }}>
+          選択した工具のうち、貸出不可のものがあります。先にツールページで選択し直してください
         </p>
-      ) : null}
+      )}
 
-      <div style={{ display: "grid", gap: 8, maxWidth: 480, marginBottom: 12 }}>
-        <Input value={borrower} onChange={(e) => { const v = e.target.value; setBorrower(v); try { localStorage.setItem(BORROWER_DRAFT_KEY, v); } catch {} }} placeholder="例: 田中（A現場）" />
-        <Input value={note} onChange={(e) => { const v = e.target.value; setNote(v); try { localStorage.setItem(NOTE_DRAFT_KEY, v); } catch {} }} placeholder="備考（任意）" />
-      </div>
+      {err ? <p style={{ color: "#b91c1c", marginTop: 12 }}>error: {err}</p> : null}
 
-      {err ? <p style={{ color: "#b91c1c", marginBottom: 12 }}>error: {err}</p> : null}
-
+      <div style={{ marginTop: 12 }}>選択件数: {loanBoxTools.length}</div>
       {loanBoxTools.length === 0 ? (
-        <p>{"\u8cb8\u51fa\u30dc\u30c3\u30af\u30b9\u306f\u7a7a\u3067\u3059"}</p>
+        <p style={{ marginTop: 12 }}>選択された工具がありません</p>
       ) : (
         <Table>
           <thead>
             <tr>
-              <Th>{"\u5de5\u5177\u540d"}</Th>
-              <Th>{"\u5009\u5eab"}</Th>
-              <Th>{"\u72b6\u614b"}</Th>
-              <Th>{"\u64cd\u4f5c"}</Th>
+              <Th>ツール名</Th>
+              <Th>資産番号</Th>
+              <Th>倉庫</Th>
+              <Th>状態</Th>
+              <Th>期限上書き</Th>
             </tr>
           </thead>
           <tbody>
-            {loanBoxTools.map((t) => (
-              <tr key={t.id}>
-                <Td>{t.name}</Td>
-                <Td>{warehouseNameById.get(t.warehouseId) ?? t.warehouseId}</Td>
-                <Td>{t.status}</Td>
+            {loanBoxTools.map((tool) => (
+              <tr key={tool.id}>
+                <Td>{tool.name}</Td>
+                <Td>{tool.assetNo}</Td>
+                <Td>{warehouseNameById.get(tool.warehouseId) ?? tool.warehouseId}</Td>
+                <Td>{statusLabel(tool.status)}</Td>
                 <Td>
-                  <Button type="button" onClick={() => removeFromLoanBox(t.id)}>
-                    {"\u7bb1\u304b\u3089\u5916\u3059"}
-                  </Button>
+                  <Input
+                    type="date"
+                    min={startDate}
+                    max={dueDate}
+                    value={dueOverrides[tool.id] || ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDueOverrides((prev) => ({ ...prev, [tool.id]: value }));
+                    }}
+                  />
                 </Td>
               </tr>
             ))}

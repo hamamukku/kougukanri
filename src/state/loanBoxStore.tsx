@@ -2,69 +2,84 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-const STORAGE_KEY = "loanBoxToolIds";
+const STORAGE_KEY = "selectedToolIds_v1";
 
 type LoanBoxContextValue = {
-  loanBoxIds: Set<string>;
-  addToLoanBox: (id: string) => void;
-  removeFromLoanBox: (id: string) => void;
-  hasInLoanBox: (id: string) => boolean;
-  clearLoanBox: () => void;
+  selectedToolIds: Set<string>;
+  addToSelection: (id: string) => void;
+  removeFromSelection: (id: string) => void;
+  hasInSelection: (id: string) => boolean;
+  clearSelection: () => void;
 };
 
 const LoanBoxContext = createContext<LoanBoxContextValue | null>(null);
 
+function readSelection(): Set<string> {
+  if (typeof sessionStorage === "undefined") return new Set();
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((x) => typeof x === "string" && x.trim()) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeSelection(ids: Set<string>) {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    if (ids.size === 0) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(ids)));
+  } catch {
+    // ignore
+  }
+}
+
 export function LoanBoxProvider({ children }: { children: React.ReactNode }) {
-  const [loanBoxIds, setLoanBoxIds] = useState<Set<string>>(new Set());
+  const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(new Set());
   const [hydrated, setHydrated] = useState(false);
 
-  // 初期復元
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const arr = JSON.parse(raw) as unknown;
-        if (Array.isArray(arr)) {
-          const onlyStrings = arr.filter((x) => typeof x === "string") as string[];
-          setLoanBoxIds(new Set(onlyStrings));
-        }
-      }
-    } catch {
-      // ignore
-    } finally {
-      setHydrated(true);
-    }
+    setSelectedToolIds(readSelection());
+    setHydrated(true);
   }, []);
 
-  // 永続化
   useEffect(() => {
     if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(loanBoxIds)));
-    } catch {
-      // ignore
-    }
-  }, [loanBoxIds, hydrated]);
+    writeSelection(selectedToolIds);
+  }, [selectedToolIds, hydrated]);
 
   const value = useMemo<LoanBoxContextValue>(() => {
     return {
-      loanBoxIds,
-      addToLoanBox: (id: string) =>
-        setLoanBoxIds((prev) => {
+      selectedToolIds,
+      addToSelection: (id: string) => {
+        setSelectedToolIds((prev) => {
+          if (!id.trim()) return prev;
+          if (prev.has(id)) return prev;
           const next = new Set(prev);
           next.add(id);
           return next;
-        }),
-      removeFromLoanBox: (id: string) =>
-        setLoanBoxIds((prev) => {
+        });
+      },
+      removeFromSelection: (id: string) => {
+        setSelectedToolIds((prev) => {
+          if (!prev.has(id)) return prev;
           const next = new Set(prev);
           next.delete(id);
           return next;
-        }),
-      hasInLoanBox: (id: string) => loanBoxIds.has(id),
-      clearLoanBox: () => setLoanBoxIds(new Set()),
+        });
+      },
+      hasInSelection: (id: string) => selectedToolIds.has(id),
+      clearSelection: () => {
+        setSelectedToolIds(new Set());
+      },
     };
-  }, [loanBoxIds]);
+  }, [selectedToolIds]);
 
   return <LoanBoxContext.Provider value={value}>{children}</LoanBoxContext.Provider>;
 }

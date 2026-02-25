@@ -117,7 +117,7 @@ export default function ToolsPage() {
             <option value="all">全て</option>
             {statusOptions.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {statusLabel(s)}
               </option>
             ))}
           </Select>

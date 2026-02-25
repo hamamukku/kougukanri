@@ -13,6 +13,7 @@ type Tool = {
   warehouseId: string;
   status: string;
 };
+
 type Warehouse = {
   id: string;
   name: string;
@@ -26,6 +27,9 @@ export default function LoanBoxPage() {
   const [err, setErr] = useState<string | null>(null);
   const [borrower, setBorrower] = useState("");
   const [note, setNote] = useState("");
+
+  const BORROWER_DRAFT_KEY = "loanBoxBorrowerDraft_v1";
+  const NOTE_DRAFT_KEY = "loanBoxNoteDraft_v1";
 
   const { loanBoxIds, removeFromLoanBox, clearLoanBox } = useLoanBox();
 
@@ -53,10 +57,44 @@ export default function LoanBoxPage() {
   }, [loadData]);
 
   useEffect(() => {
+    try {
+      const b = localStorage.getItem(BORROWER_DRAFT_KEY);
+      const n = localStorage.getItem(NOTE_DRAFT_KEY);
+      if (b && !borrower.trim()) setBorrower(b);
+      if (n && !note.trim()) setNote(n);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     if (borrower.trim()) return;
+    let draft = "";
+    try {
+      draft = localStorage.getItem(BORROWER_DRAFT_KEY) || "";
+    } catch {}
+    if (draft.trim()) return;
     const u = getCookie("username");
     if (u) setBorrower(u);
   }, []);
+
+  useEffect(() => {
+    try {
+      if (borrower.trim() === "") {
+        localStorage.removeItem(BORROWER_DRAFT_KEY);
+      } else {
+        localStorage.setItem(BORROWER_DRAFT_KEY, borrower);
+      }
+    } catch {}
+  }, [borrower]);
+
+  useEffect(() => {
+    try {
+      if (note.trim() === "") {
+        localStorage.removeItem(NOTE_DRAFT_KEY);
+      } else {
+        localStorage.setItem(NOTE_DRAFT_KEY, note);
+      }
+    } catch {}
+  }, [note]);
 
   const warehouseNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -92,6 +130,11 @@ export default function LoanBoxPage() {
             : `checkout failed ${res.status}`;
         throw new Error(msg);
       }
+
+      try {
+        localStorage.removeItem(BORROWER_DRAFT_KEY);
+        localStorage.removeItem(NOTE_DRAFT_KEY);
+      } catch {}
 
       clearLoanBox();
       setBorrower("");
@@ -133,8 +176,16 @@ export default function LoanBoxPage() {
       ) : null}
 
       <div style={{ display: "grid", gap: 8, maxWidth: 480, marginBottom: 12 }}>
-        <Input value={borrower} onChange={(e) => setBorrower(e.target.value)} placeholder="例: 田中（A現場）" />
-        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ（任意）" />
+        <Input
+          value={borrower}
+          onChange={(e) => setBorrower(e.target.value)}
+          placeholder="例: 田中（A現場）"
+        />
+        <Input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="メモ（任意）"
+        />
       </div>
 
       {err ? <p style={{ color: "#b91c1c", marginBottom: 12 }}>error: {err}</p> : null}
@@ -163,7 +214,7 @@ export default function LoanBoxPage() {
                   </Button>
                 </Td>
               </tr>
-              ))}
+            ))}
           </tbody>
         </Table>
       )}

@@ -13,7 +13,11 @@ type Tool = {
   warehouseId: string;
   status: string;
 };
-type Warehouse = { id: string; name: string };
+
+type Warehouse = {
+  id: string;
+  name: string;
+};
 
 const PAGE_SIZE = 25;
 
@@ -34,6 +38,7 @@ export default function ToolsPage() {
     (async () => {
       try {
         const [tRes, wRes] = await Promise.all([fetch("/api/tools"), fetch("/api/warehouses")]);
+
         if (!tRes.ok) throw new Error(`/api/tools ${tRes.status}`);
         if (!wRes.ok) throw new Error(`/api/warehouses ${wRes.status}`);
 
@@ -41,6 +46,7 @@ export default function ToolsPage() {
         const w = (await wRes.json()) as Warehouse[];
         setTools(t);
         setWarehouses(w);
+        setErr(null);
       } catch (e: unknown) {
         setErr(e instanceof Error ? e.message : String(e));
       } finally {
@@ -77,7 +83,6 @@ export default function ToolsPage() {
     return filteredTools.slice(start, start + PAGE_SIZE);
   }, [filteredTools, safePage]);
 
-  const onAdd = (id: string) => addToLoanBox(id);
   const statusOptions = ["available", "loaned", "repairing", "lost"];
 
   if (loading) return <main style={{ padding: 16 }}>loading...</main>;
@@ -164,9 +169,15 @@ export default function ToolsPage() {
         <tbody>
           {pageTools.map((t) => {
             const isAdded = hasInLoanBox(t.id);
-            const isLoaned = t.status === "loaned";
-            const disabled = isLoaned || isAdded;
-            const label = isLoaned ? "貸出中" : isAdded ? "追加済み" : "貸出に追加";
+            const disabled = t.status !== "available" || isAdded;
+            const label =
+              t.status === "loaned"
+                ? "貸出中"
+                : t.status !== "available" && t.status !== "loaned"
+                  ? "貸出不可"
+                  : isAdded
+                    ? "追加済み"
+                    : "貸出に追加";
 
             return (
               <tr key={t.id}>
@@ -174,7 +185,7 @@ export default function ToolsPage() {
                 <Td>{warehouseNameById.get(t.warehouseId) ?? t.warehouseId}</Td>
                 <Td>{t.status}</Td>
                 <Td>
-                  <Button type="button" disabled={disabled} onClick={() => onAdd(t.id)}>
+                  <Button type="button" disabled={disabled} onClick={() => addToLoanBox(t.id)}>
                     {label}
                   </Button>
                 </Td>

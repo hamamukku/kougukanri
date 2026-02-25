@@ -87,13 +87,22 @@ export default function AdminReturnsPage() {
         : null;
     })
     .filter(
-      (x): x is { loanId: string; toolId: string; name: string; warehouseId: string; borrower: string; loanedAt: string } =>
-        x !== null
+      (
+        row
+      ): row is {
+        loanId: string;
+        toolId: string;
+        name: string;
+        warehouseId: string;
+        borrower: string;
+        loanedAt: string;
+      } => row !== null
     );
 
   const onApprove = async (toolId: string) => {
     try {
       const res = await fetch(`/api/loans/return/${toolId}`, { method: "POST" });
+
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         const msg =
@@ -104,7 +113,6 @@ export default function AdminReturnsPage() {
       }
 
       await loadData();
-      alert("返却を承認しました");
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -142,7 +150,7 @@ export default function AdminReturnsPage() {
                 <Td>{row.name}</Td>
                 <Td>{warehouseNameById.get(row.warehouseId) ?? row.warehouseId}</Td>
                 <Td>{row.borrower}</Td>
-                <Td>{row.loanedAt}</Td>
+                <Td>{fmt(row.loanedAt)}</Td>
                 <Td>
                   <Button type="button" onClick={() => onApprove(row.toolId)}>
                     返却承認
@@ -156,3 +164,8 @@ export default function AdminReturnsPage() {
     </main>
   );
 }
+
+const fmt = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ja-JP");
+};

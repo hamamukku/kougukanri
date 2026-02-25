@@ -87,7 +87,17 @@ export default function MyLoansPage() {
           }
         : null;
     })
-    .filter((x): x is { id: string; name: string; warehouseId: string; borrower: string; loanedAt: string } => x !== null);
+    .filter(
+      (
+        row
+      ): row is {
+        id: string;
+        name: string;
+        warehouseId: string;
+        borrower: string;
+        loanedAt: string;
+      } => row !== null
+    );
 
   return (
     <main style={{ padding: 16 }}>
@@ -111,7 +121,7 @@ export default function MyLoansPage() {
                 <Td>{row.name}</Td>
                 <Td>{warehouseNameById.get(row.warehouseId) ?? row.warehouseId}</Td>
                 <Td>{row.borrower}</Td>
-                <Td>{row.loanedAt}</Td>
+                <Td>{fmt(row.loanedAt)}</Td>
               </tr>
             ))}
           </tbody>
@@ -120,3 +130,8 @@ export default function MyLoansPage() {
     </main>
   );
 }
+
+const fmt = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ja-JP");
+};

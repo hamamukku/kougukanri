@@ -31,6 +31,7 @@ export default function LoanBoxPage() {
   const loadData = useCallback(async () => {
     try {
       const [tRes, wRes] = await Promise.all([fetch("/api/tools"), fetch("/api/warehouses")]);
+
       if (!tRes.ok) throw new Error(`/api/tools ${tRes.status}`);
       if (!wRes.ok) throw new Error(`/api/warehouses ${wRes.status}`);
 
@@ -56,11 +57,12 @@ export default function LoanBoxPage() {
     return m;
   }, [warehouses]);
 
-  const loanBoxTools = useMemo(() => {
-    return tools.filter((t) => loanBoxIds.has(t.id));
-  }, [tools, loanBoxIds]);
+  const loanBoxTools = useMemo(() => tools.filter((t) => loanBoxIds.has(t.id)), [tools, loanBoxIds]);
 
-  const loanBoxIdsList = useMemo(() => loanBoxTools.map((t) => t.id), [loanBoxTools]);
+  const loanBoxToolIds = useMemo(() => loanBoxTools.map((t) => t.id), [loanBoxTools]);
+  const hasNonAvailable = useMemo(() => loanBoxTools.some((t) => t.status !== "available"), [loanBoxTools]);
+  const checkoutDisabled =
+    loanBoxTools.length === 0 || submitting || hasNonAvailable || borrower.trim().length === 0;
 
   const onCheckout = async () => {
     setSubmitting(true);
@@ -69,7 +71,7 @@ export default function LoanBoxPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ids: loanBoxIdsList,
+          ids: loanBoxToolIds,
           borrower,
           note,
         }),
@@ -102,13 +104,9 @@ export default function LoanBoxPage() {
   return (
     <main style={{ padding: 16 }}>
       <h1>貸出ボックス</h1>
+
       <div style={{ marginTop: 12, marginBottom: 12, display: "flex", gap: 8 }}>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={loanBoxTools.length === 0 || submitting || borrower.trim().length === 0}
-          onClick={onCheckout}
-        >
+        <Button type="button" variant="ghost" disabled={checkoutDisabled} onClick={onCheckout}>
           貸出実行
         </Button>
         <Button
@@ -121,13 +119,15 @@ export default function LoanBoxPage() {
         </Button>
       </div>
 
+      {hasNonAvailable ? (
+        <p style={{ color: "#b91c1c", marginBottom: 12 }}>
+          貸出できない状態の工具が含まれています（availableのみ貸出可）
+        </p>
+      ) : null}
+
       <div style={{ display: "grid", gap: 8, maxWidth: 480, marginBottom: 12 }}>
-        <Input
-          value={borrower}
-          onChange={(e) => setBorrower(e.target.value)}
-          placeholder="例: 田中（A現場）"
-        />
-        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="備考（任意）" />
+        <Input value={borrower} onChange={(e) => setBorrower(e.target.value)} placeholder="例: 田中（A現場）" />
+        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ（任意）" />
       </div>
 
       {err ? <p style={{ color: "#b91c1c", marginBottom: 12 }}>error: {err}</p> : null}

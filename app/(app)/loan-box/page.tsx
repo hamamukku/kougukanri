@@ -67,11 +67,13 @@ export default function LoanBoxPage() {
 
   useEffect(() => {
     if (borrower.trim()) return;
+
     let draft = "";
     try {
       draft = localStorage.getItem(BORROWER_DRAFT_KEY) || "";
     } catch {}
     if (draft.trim()) return;
+
     const u = getCookie("username");
     if (u) setBorrower(u);
   }, []);
@@ -176,16 +178,8 @@ export default function LoanBoxPage() {
       ) : null}
 
       <div style={{ display: "grid", gap: 8, maxWidth: 480, marginBottom: 12 }}>
-        <Input
-          value={borrower}
-          onChange={(e) => setBorrower(e.target.value)}
-          placeholder="例: 田中（A現場）"
-        />
-        <Input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="メモ（任意）"
-        />
+        <Input value={borrower} onChange={(e) => setBorrower(e.target.value)} placeholder="例: 田中（A現場）" />
+        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ（任意）" />
       </div>
 
       {err ? <p style={{ color: "#b91c1c", marginBottom: 12 }}>error: {err}</p> : null}

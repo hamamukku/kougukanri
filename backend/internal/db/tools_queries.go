@@ -1,0 +1,277 @@
+package db
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
+
+type CreateToolParams struct {
+	AssetNo     string
+	Name        string
+	WarehouseID uuid.UUID
+	BaseStatus  string
+}
+
+const createToolQuery = `
+INSERT INTO tools (
+    asset_no,
+    name,
+    warehouse_id,
+    base_status,
+    created_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    NOW(),
+    NOW()
+)
+RETURNING id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+`
+
+func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, error) {
+	row := q.db.QueryRowContext(ctx, createToolQuery,
+		arg.AssetNo,
+		arg.Name,
+		arg.WarehouseID,
+		arg.BaseStatus,
+	)
+	var i Tool
+	err := row.Scan(
+		&i.ID,
+		&i.AssetNo,
+		&i.Name,
+		&i.WarehouseID,
+		&i.BaseStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getToolByIDQuery = `
+SELECT id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+FROM tools
+WHERE id = $1
+`
+
+func (q *Queries) GetToolByID(ctx context.Context, id uuid.UUID) (Tool, error) {
+	row := q.db.QueryRowContext(ctx, getToolByIDQuery, id)
+	var i Tool
+	err := row.Scan(
+		&i.ID,
+		&i.AssetNo,
+		&i.Name,
+		&i.WarehouseID,
+		&i.BaseStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getToolForUpdateQuery = `
+SELECT id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+FROM tools
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetToolForUpdate(ctx context.Context, id uuid.UUID) (Tool, error) {
+	row := q.db.QueryRowContext(ctx, getToolForUpdateQuery, id)
+	var i Tool
+	err := row.Scan(
+		&i.ID,
+		&i.AssetNo,
+		&i.Name,
+		&i.WarehouseID,
+		&i.BaseStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+type UpdateToolParams struct {
+	ID          uuid.UUID
+	Name        string
+	WarehouseID uuid.UUID
+	BaseStatus  string
+}
+
+const updateToolQuery = `
+UPDATE tools
+SET name = $2,
+    warehouse_id = $3,
+    base_status = $4,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+`
+
+func (q *Queries) UpdateTool(ctx context.Context, arg UpdateToolParams) (Tool, error) {
+	row := q.db.QueryRowContext(ctx, updateToolQuery,
+		arg.ID,
+		arg.Name,
+		arg.WarehouseID,
+		arg.BaseStatus,
+	)
+	var i Tool
+	err := row.Scan(
+		&i.ID,
+		&i.AssetNo,
+		&i.Name,
+		&i.WarehouseID,
+		&i.BaseStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+type ListToolsWithDisplayParams struct {
+	Today       string
+	WarehouseID string
+	Q           string
+	Mode        string
+	RequesterID uuid.UUID
+	Status      string
+	Limit       int32
+	Offset      int32
+}
+
+const listToolsWithDisplayQuery = `
+WITH tool_state AS (
+    SELECT
+        t.id,
+        t.asset_no,
+        t.name,
+        t.warehouse_id,
+        w.name AS warehouse_name,
+        t.base_status,
+        loan.start_date AS loan_start_date,
+        loan.due_date AS loan_due_date,
+        reserve.start_date AS reserved_start_date,
+        reserve.due_date AS reserved_due_date,
+        reserve.borrower_id AS reserved_by
+    FROM tools t
+    JOIN warehouses w ON w.id = t.warehouse_id
+    LEFT JOIN LATERAL (
+        SELECT li.start_date, li.due_date, li.borrower_id
+        FROM loan_items li
+        WHERE li.tool_id = t.id
+          AND li.return_approved_at IS NULL
+          AND li.start_date <= $1::date
+        ORDER BY li.start_date DESC
+        LIMIT 1
+    ) AS loan ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT li.start_date, li.due_date, li.borrower_id
+        FROM loan_items li
+        WHERE li.tool_id = t.id
+          AND li.return_approved_at IS NULL
+          AND li.start_date > $1::date
+        ORDER BY li.start_date ASC
+        LIMIT 1
+    ) AS reserve ON TRUE
+    WHERE
+        (NULLIF($2::text, '') IS NULL OR t.warehouse_id = NULLIF($2::text, '')::uuid)
+        AND (
+            $3::text = ''
+            OR (
+                CASE
+                    WHEN $4::text = 'exact' THEN (t.name = $3::text OR t.asset_no = $3::text)
+                    ELSE (t.name ILIKE '%' || $3::text || '%' OR t.asset_no ILIKE '%' || $3::text || '%')
+                END
+            )
+        )
+)
+SELECT
+    id,
+    asset_no,
+    name,
+    warehouse_id,
+    warehouse_name,
+    base_status,
+    CASE
+        WHEN base_status = 'BROKEN' THEN 'BROKEN'
+        WHEN base_status = 'REPAIR' THEN 'REPAIR'
+        WHEN loan_start_date IS NOT NULL THEN 'LOANED'
+        WHEN reserved_start_date IS NOT NULL THEN 'RESERVED'
+        ELSE 'AVAILABLE'
+    END AS display_status,
+    CASE
+        WHEN loan_start_date IS NOT NULL THEN loan_start_date
+        ELSE reserved_start_date
+    END AS display_start_date,
+    CASE
+        WHEN loan_due_date IS NOT NULL THEN loan_due_date
+        ELSE reserved_due_date
+    END AS display_due_date,
+    CASE
+        WHEN reserved_start_date IS NOT NULL AND reserved_by <> $5::uuid THEN TRUE
+        ELSE FALSE
+    END AS is_blocked_by_other_reservation,
+    CASE
+        WHEN reserved_start_date IS NOT NULL AND reserved_by = $5::uuid THEN TRUE
+        ELSE FALSE
+    END AS is_reserved_by_me
+FROM tool_state
+WHERE
+    (
+        $6::text = ''
+        OR (
+            CASE
+                WHEN base_status = 'BROKEN' THEN 'BROKEN'
+                WHEN base_status = 'REPAIR' THEN 'REPAIR'
+                WHEN loan_start_date IS NOT NULL THEN 'LOANED'
+                WHEN reserved_start_date IS NOT NULL THEN 'RESERVED'
+                ELSE 'AVAILABLE'
+            END = $6::text
+        )
+    )
+ORDER BY asset_no ASC
+LIMIT $7 OFFSET $8
+`
+
+func (q *Queries) ListToolsWithDisplay(ctx context.Context, arg ListToolsWithDisplayParams) ([]ToolWithDisplay, error) {
+	rows, err := q.db.QueryContext(ctx, listToolsWithDisplayQuery,
+		arg.Today,
+		arg.WarehouseID,
+		arg.Q,
+		arg.Mode,
+		arg.RequesterID,
+		arg.Status,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]ToolWithDisplay, 0)
+	for rows.Next() {
+		var i ToolWithDisplay
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetNo,
+			&i.Name,
+			&i.WarehouseID,
+			&i.WarehouseName,
+			&i.BaseStatus,
+			&i.DisplayStatus,
+			&i.DisplayStartDate,
+			&i.DisplayDueDate,
+			&i.IsBlockedByOtherReservation,
+			&i.IsReservedByMe,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}

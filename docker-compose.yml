@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: kougukanri-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kougukanri
+      TZ: Asia/Tokyo
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kougukanri"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: kougukanri-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://postgres:postgres@db:5432/kougukanri?sslmode=disable&TimeZone=Asia%2FTokyo
+      MIGRATIONS_PATH: file:///app/db/migrations
+      JWT_SECRET: super-secret-key
+      JWT_EXPIRES_HOURS: 24
+      CRON_ENABLED: "true"
+      SMTP_HOST: ""
+      SMTP_PORT: 587
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: ""
+      SEED_ADMIN_DEPARTMENT: system
+      SEED_ADMIN_USERNAME: admin
+      SEED_ADMIN_EMAIL: admin@example.com
+      SEED_ADMIN_PASSWORD: admin123
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:

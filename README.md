@@ -1,36 +1,118 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tool Management API Server
 
-## Getting Started
+This repository contains a Go backend API for tool warehouse management.
 
-First, run the development server:
+## Stack
+- Go 1.22+
+- gin-gonic/gin
+- PostgreSQL (Docker)
+- golang-migrate/migrate
+- sqlc
+- JWT Bearer auth
+- robfig/cron/v3 (06:00 JST daily)
+- SMTP mail
 
+## Layout
+- `docker-compose.yml`: `db` and `api` services
+- `backend/`: API app
+  - `cmd/api/main.go`
+  - `db/migrations`
+  - `db/query`
+  - `sqlc.yaml`
+
+## Start
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Endpoints:
+- API: `http://localhost:3000`
+- DB: `localhost:5432`
+- Health: `GET /health` -> 200
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The API applies migrations automatically at startup.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Seed admin
+`docker-compose.yml` sets seed values. If `users` table is empty, one admin is created:
+- username: `admin`
+- email: `admin@example.com`
+- password: `admin123`
 
-## Learn More
+## Environment variables
+Template: `backend/.env.example`
 
-To learn more about Next.js, take a look at the following resources:
+Main variables:
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `MIGRATIONS_PATH`
+- `CRON_ENABLED`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## sqlc
+```bash
+cd backend
+sqlc generate
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+sqlc output path is `backend/internal/sqlc`.
 
-## Deploy on Vercel
+## Manual migrate (optional)
+The app already runs migrations automatically. CLI example:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+migrate -path backend/db/migrations -database "postgres://postgres:postgres@localhost:5432/kougukanri?sslmode=disable&TimeZone=Asia%2FTokyo" up
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Required APIs
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/warehouses`
+- `POST /api/admin/warehouses`
+- `GET /api/tools`
+- `GET /api/admin/tools`
+- `POST /api/admin/tools`
+- `PATCH /api/admin/tools/:toolId`
+- `POST /api/loan-boxes`
+- `GET /api/my/loans`
+- `POST /api/my/loans/:loanItemId/return-request`
+- `GET /api/admin/returns/requests`
+- `POST /api/admin/returns/approve-box`
+- `POST /api/admin/returns/approve-items`
+- `POST /api/admin/users`
+
+## Error format
+```json
+{
+  "error": {
+    "code": "RESERVATION_CONFLICT",
+    "message": "...",
+    "details": {}
+  }
+}
+```
+
+## Minimum flow check
+1. Login as seed admin.
+2. Create warehouse as admin.
+3. Register tools as admin.
+4. Create normal user as admin.
+5. Login as user and create loan/reservation via `POST /api/loan-boxes`.
+6. Request return via `POST /api/my/loans/:loanItemId/return-request`.
+7. Approve return as admin (`approve-box` or `approve-items`).
+8. Verify tool becomes `AVAILABLE` in `GET /api/tools`.
+
+## Reservation overlap check
+Create overlapping period for same tool and confirm `409 RESERVATION_CONFLICT`.
+
+## Cron overdue check
+Cron runs every day at `06:00 JST`.
+
+Manual one-shot run:
+```bash
+docker compose exec api /app/api -run-overdue-once
+```
+
+Overdue filter:
+- `return_approved_at IS NULL`
+- `start_date <= today (JST)`
+- `due_date < today (JST)`

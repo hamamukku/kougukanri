@@ -69,6 +69,7 @@ export default function AdminUsersPage() {
 
   return (
     <main style={{ padding: 16 }}>
+      {/* 一般画面（tools/my-loans/loan-box/admin/returns）はメールアドレスを表示しない前提の回帰チェック用コメント。 */}
       <h1>ユーザー管理</h1>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>

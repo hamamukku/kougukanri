@@ -141,8 +141,6 @@ export default function LoanBoxPage() {
           dueOverrides: payloadOverrides,
         }),
       });
-        }),
-      });
 
       clearSelection();
       setDueOverrides({});
@@ -171,7 +169,7 @@ export default function LoanBoxPage() {
           <Input type="date" value={dueDate} min={startDate} onChange={(e) => setDueDate(e.target.value)} />
         </div>
         <Button type="button" disabled={checkoutDisabled} onClick={onCheckout}>
-          確認
+          {submitting ? "送信中..." : "確認"}
         </Button>
       </div>
 

@@ -90,6 +90,7 @@ export default function MyLoansPage() {
 
   const onRequestReturn = async (boxId: string, toolId: string) => {
     const key = `${boxId}:${toolId}`;
+    if (requesting.has(key)) return;
     setRequesting((prev) => new Set(prev).add(key));
     try {
       await apiFetchJson<{ ok: true } & Record<string, unknown>>("/api/my/returns/request", {
@@ -97,7 +98,6 @@ export default function MyLoansPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ boxId, toolId }),
       });
-      void res;
       await loadData();
     } catch (e: unknown) {
       const message = handleApiError(e, { onForbiddenRedirect: true });

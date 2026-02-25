@@ -153,7 +153,7 @@ export default function AdminReturnsPage() {
               </p>
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                 <Button type="button" disabled={isBusy} onClick={() => onApproveAll(group.boxId)}>
-                  ボックス一括承認
+                  {isBusy ? "処理中..." : "一括承認"}
                 </Button>
                 <Button
                   type="button"
@@ -161,7 +161,7 @@ export default function AdminReturnsPage() {
                   disabled={selected.size === 0 || isBusy}
                   onClick={() => onApproveSelected(group.boxId)}
                 >
-                  選択分のみ承認
+                  {isBusy ? "処理中..." : "選択分を承認"}
                 </Button>
               </div>
               <Table>
@@ -184,6 +184,7 @@ export default function AdminReturnsPage() {
                           <input
                             type="checkbox"
                             checked={checked}
+                            disabled={isBusy}
                             onChange={(e) => toggleTool(group.boxId, item.toolId, e.target.checked)}
                           />
                         </Td>

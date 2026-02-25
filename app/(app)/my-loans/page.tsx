@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "../../../src/components/ui/Button";
@@ -23,7 +23,7 @@ type MyBox = {
     warehouseId: string;
     dueOverride?: string;
     dueEffective: string;
-    status: string;
+    status: "available" | "loaned" | "repairing" | "lost";
     returnStatus?: "none" | "requested" | "approved";
     requestedAt?: string;
   }>;
@@ -119,58 +119,66 @@ export default function MyLoansPage() {
       <h1>My Loans</h1>
 
       {boxes.length === 0 ? (
-        <p>現在、開いている借り出しはありません</p>
+        <p>表示する貸出情報がありません。</p>
       ) : (
-        boxes.map((box) => (
-          <section key={box.box.id} style={{ marginBottom: 24 }}>
-            <h2 style={{ marginBottom: 4 }}>
-              {box.box.ownerUsername}-ボックス{box.box.boxNo}
-            </h2>
-            <p style={{ marginTop: 0 }}>
-              開始日: {box.box.startDate} / 期限日: {box.box.dueDate}
-            </p>
-            <Table>
-              <thead>
-                <tr>
-                  <Th>ツール名</Th>
-                  <Th>資産番号</Th>
-                  <Th>倉庫</Th>
-                  <Th>期限</Th>
-                  <Th>状態</Th>
-                  <Th>返却申請</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {box.items
-                  .slice()
-                  .sort((a, b) => b.dueEffective.localeCompare(a.dueEffective))
-                  .map((item) => {
-                    const key = `${box.box.id}:${item.toolId}`;
-                    const requested = item.returnStatus === "requested";
-                    const busy = requesting.has(key);
-                    return (
-                      <tr key={key}>
-                        <Td>{item.toolName}</Td>
-                        <Td>{item.assetNo}</Td>
-                        <Td>{warehouseNameById.get(item.warehouseId) ?? item.warehouseId}</Td>
-                        <Td>{item.dueEffective}</Td>
-                        <Td>{statusLabel(item.status)}</Td>
-                        <Td>
-                          <Button
-                            type="button"
-                            disabled={requested || busy}
-                            onClick={() => onRequestReturn(box.box.id, item.toolId)}
-                          >
-                            {requested ? "申請中" : busy ? "申請中..." : "返却申請"}
-                          </Button>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </Table>
-          </section>
-        ))
+        boxes.map((box) => {
+          const visibleItems = box.items
+            .filter((item) => item.returnStatus !== "approved")
+            .slice()
+            .sort((a, b) => b.dueEffective.localeCompare(a.dueEffective));
+
+          return (
+            <section key={box.box.id} style={{ marginBottom: 24 }}>
+              <h2 style={{ marginBottom: 4 }}>
+                {box.box.ownerUsername}-ボックス{box.box.boxNo}
+              </h2>
+              <p style={{ marginTop: 0 }}>
+                開始日: {box.box.startDate} / 期限日: {box.box.dueDate}
+              </p>
+              {visibleItems.length === 0 ? (
+                <p>返却申請可能な工具はありません。</p>
+              ) : (
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>工具名</Th>
+                      <Th>資産番号</Th>
+                      <Th>倉庫</Th>
+                      <Th>期限</Th>
+                      <Th>状態</Th>
+                      <Th>返却申請</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleItems.map((item) => {
+                      const key = `${box.box.id}:${item.toolId}`;
+                      const requested = item.returnStatus === "requested";
+                      const busy = requesting.has(key);
+                      return (
+                        <tr key={key}>
+                          <Td>{item.toolName}</Td>
+                          <Td>{item.assetNo}</Td>
+                          <Td>{warehouseNameById.get(item.warehouseId) ?? item.warehouseId}</Td>
+                          <Td>{item.dueEffective}</Td>
+                          <Td>{statusLabel(item.status)}</Td>
+                          <Td>
+                            <Button
+                              type="button"
+                              disabled={requested || busy}
+                              onClick={() => onRequestReturn(box.box.id, item.toolId)}
+                            >
+                              {requested ? "申請済" : busy ? "申請中..." : "返却申請"}
+                            </Button>
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              )}
+            </section>
+          );
+        })
       )}
     </main>
   );

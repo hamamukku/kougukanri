@@ -303,6 +303,16 @@ function saveState() {
   saveArray(USERS_STORAGE_KEY, users);
 }
 
+function resetStateToInitial() {
+  tools = createInitialTools();
+  warehouses = createInitialWarehouses();
+  boxes = [];
+  boxItems = [];
+  returnRequests = [];
+  users = [...ADMIN_USERS_FALLBACK];
+  saveState();
+}
+
 function nextBoxNo(ownerUsername: string, list: Box[]): number {
   const mine = list.filter((box) => box.ownerUsername === ownerUsername);
   const maxNo = mine.reduce((acc, box) => Math.max(acc, box.boxNo), 0);
@@ -531,22 +541,19 @@ export const handlers = [
     if (box.ownerUsername !== ownerUsername) {
       return HttpResponse.json({ ok: false, message: "forbidden" }, { status: 403 });
     }
-    if (box.status !== "open") {
-      return HttpResponse.json({ ok: false, message: "box is closed" }, { status: 400 });
-    }
     if (!boxItems.some((item) => item.boxId === boxId && item.toolId === toolId)) {
       return HttpResponse.json({ ok: false, message: "tool not in box" }, { status: 404 });
+    }
+    if (box.status !== "open") {
+      return HttpResponse.json({ ok: false, message: "box is not open" }, { status: 400 });
     }
 
     const targetIdx = returnRequests.findIndex((r) => r.boxId === boxId && r.toolId === toolId);
     if (targetIdx === -1) {
       return HttpResponse.json({ ok: false, message: "return request target not found" }, { status: 404 });
     }
-    if (returnRequests[targetIdx].status === "requested") {
+    if (returnRequests[targetIdx].status === "requested" || returnRequests[targetIdx].status === "approved") {
       return HttpResponse.json({ ok: false, message: "already requested" }, { status: 409 });
-    }
-    if (returnRequests[targetIdx].status === "approved") {
-      return HttpResponse.json({ ok: false, message: "already approved" }, { status: 409 });
     }
 
     returnRequests[targetIdx] = {
@@ -622,6 +629,9 @@ export const handlers = [
     const target = boxes.find((b) => b.id === boxId);
     if (!target) {
       return HttpResponse.json({ ok: false, message: "box not found" }, { status: 404 });
+    }
+    if (target.status === "closed") {
+      return HttpResponse.json({ ok: false, message: "box is closed" }, { status: 400 });
     }
 
     const requested = returnRequests.filter((r) => r.boxId === boxId && r.status === "requested");
@@ -703,6 +713,91 @@ export const handlers = [
     saveArray(WAREHOUSES_STORAGE_KEY, warehouses);
     return HttpResponse.json({ ok: true, warehouse });
   }),
+  http.patch("/api/admin/warehouses/:id", async ({ params, request }) => {
+    await delay(5);
+    const id = typeof params.id === "string" ? params.id : "";
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {}
+    const obj = (body as Record<string, unknown>) || {};
+    const nextName = typeof obj.name === "string" ? obj.name.trim() : "";
+    const found = warehouses.findIndex((w) => w.id === id);
+
+    if (found === -1) {
+      return HttpResponse.json({ ok: false, message: "warehouse not found" }, { status: 404 });
+    }
+    if (!nextName) {
+      return HttpResponse.json({ ok: false, message: "name required" }, { status: 422 });
+    }
+
+    const nextWarehouses = warehouses.map((warehouse) => {
+      if (warehouse.id !== id) return warehouse;
+      return { ...warehouse, name: nextName };
+    });
+    warehouses = nextWarehouses;
+    const updatedWarehouse = nextWarehouses.find((warehouse) => warehouse.id === id) || null;
+
+    saveArray(WAREHOUSES_STORAGE_KEY, warehouses);
+    return HttpResponse.json({ ok: true, warehouse: updatedWarehouse });
+  }),
+  http.delete("/api/admin/warehouses/:id", async ({ params }) => {
+    await delay(5);
+    const id = typeof params.id === "string" ? params.id : "";
+    const found = warehouses.find((warehouse) => warehouse.id === id);
+    if (!found) {
+      return HttpResponse.json({ ok: false, message: "warehouse not found" }, { status: 404 });
+    }
+    warehouses = warehouses.filter((warehouse) => warehouse.id !== id);
+    saveArray(WAREHOUSES_STORAGE_KEY, warehouses);
+    return HttpResponse.json({ ok: true });
+  }),
+  http.patch("/api/admin/users/:id", async ({ params, request }) => {
+    await delay(5);
+    const id = typeof params.id === "string" ? params.id : "";
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {}
+    const obj = (body as Record<string, unknown>) || {};
+    const found = users.findIndex((user) => user.id === id);
+    const nextUsername = typeof obj.username === "string" ? obj.username.trim() : undefined;
+    const nextRole = obj.role === "admin" || obj.role === "user" ? obj.role : undefined;
+    if (found === -1) {
+      return HttpResponse.json({ ok: false, message: "user not found" }, { status: 404 });
+    }
+    if (nextUsername === undefined && nextRole === undefined) {
+      return HttpResponse.json({ ok: false, message: "username or role required" }, { status: 422 });
+    }
+    if (nextUsername !== undefined && !nextUsername) {
+      return HttpResponse.json({ ok: false, message: "username required" }, { status: 422 });
+    }
+
+    const nextUsers = users.map((user, index) => {
+      if (index !== found) return user;
+      return {
+        ...user,
+        ...(nextUsername !== undefined ? { username: nextUsername } : {}),
+        ...(nextRole !== undefined ? { role: nextRole } : {}),
+      };
+    });
+    users = nextUsers;
+    const updatedUser = nextUsers.find((user) => user.id === id) || null;
+
+    saveArray(USERS_STORAGE_KEY, users);
+    return HttpResponse.json({ ok: true, user: updatedUser });
+  }),
+  http.delete("/api/admin/users/:id", async ({ params }) => {
+    await delay(5);
+    const id = typeof params.id === "string" ? params.id : "";
+    const found = users.find((user) => user.id === id);
+    if (!found) {
+      return HttpResponse.json({ ok: false, message: "user not found" }, { status: 404 });
+    }
+    users = users.filter((user) => user.id !== id);
+    saveArray(USERS_STORAGE_KEY, users);
+    return HttpResponse.json({ ok: true });
+  }),
   http.get("/api/admin/tools", async () => {
     await delay(5);
     return HttpResponse.json(tools);
@@ -741,5 +836,82 @@ export const handlers = [
     tools = [tool, ...tools];
     saveArray(TOOLS_STORAGE_KEY, tools);
     return HttpResponse.json({ ok: true, tool });
+  }),
+  http.patch("/api/admin/tools/:id", async ({ params, request }) => {
+    await delay(5);
+    const id = typeof params.id === "string" ? params.id : "";
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {}
+    const obj = (body as Record<string, unknown>) || {};
+    const found = tools.findIndex((tool) => tool.id === id);
+    if (found === -1) {
+      return HttpResponse.json({ ok: false, message: "tool not found" }, { status: 404 });
+    }
+
+    const nextName = typeof obj.name === "string" ? obj.name.trim() : undefined;
+    const nextAssetNo = typeof obj.assetNo === "string" ? obj.assetNo.trim() : undefined;
+    const nextWarehouseId = typeof obj.warehouseId === "string" ? obj.warehouseId.trim() : undefined;
+    const nextStatus = isToolStatus(obj.status) ? obj.status : undefined;
+
+    if (
+      nextName === undefined &&
+      nextAssetNo === undefined &&
+      nextWarehouseId === undefined &&
+      nextStatus === undefined
+    ) {
+      return HttpResponse.json({ ok: false, message: "no field provided" }, { status: 422 });
+    }
+
+    if (nextName !== undefined && !nextName) {
+      return HttpResponse.json({ ok: false, message: "name required" }, { status: 422 });
+    }
+    if (nextAssetNo !== undefined && !nextAssetNo) {
+      return HttpResponse.json({ ok: false, message: "assetNo required" }, { status: 422 });
+    }
+    if (nextWarehouseId !== undefined && !warehouses.some((w) => w.id === nextWarehouseId)) {
+      return HttpResponse.json({ ok: false, message: "warehouse not found" }, { status: 404 });
+    }
+
+    const nextTools = tools.map((tool, index) => {
+      if (index !== found) return tool;
+      return {
+        ...tool,
+        ...(nextName !== undefined ? { name: nextName } : {}),
+        ...(nextAssetNo !== undefined ? { assetNo: nextAssetNo } : {}),
+        ...(nextWarehouseId !== undefined ? { warehouseId: nextWarehouseId } : {}),
+        ...(nextStatus !== undefined ? { status: nextStatus } : {}),
+      };
+    });
+    tools = nextTools;
+    const updatedTool = nextTools.find((tool) => tool.id === id) || null;
+
+    saveArray(TOOLS_STORAGE_KEY, tools);
+    return HttpResponse.json({ ok: true, tool: updatedTool });
+  }),
+  http.delete("/api/admin/tools/:id", async ({ params }) => {
+    await delay(5);
+    const id = typeof params.id === "string" ? params.id : "";
+    const found = tools.find((tool) => tool.id === id);
+    if (!found) {
+      return HttpResponse.json({ ok: false, message: "tool not found" }, { status: 404 });
+    }
+    tools = tools.filter((tool) => tool.id !== id);
+    saveArray(TOOLS_STORAGE_KEY, tools);
+    return HttpResponse.json({ ok: true });
+  }),
+  http.post("/api/admin/dev/reset", async () => {
+    await delay(5);
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(TOOLS_STORAGE_KEY);
+      localStorage.removeItem(WAREHOUSES_STORAGE_KEY);
+      localStorage.removeItem(BOXES_STORAGE_KEY);
+      localStorage.removeItem(BOX_ITEMS_STORAGE_KEY);
+      localStorage.removeItem(RETURN_REQUESTS_STORAGE_KEY);
+      localStorage.removeItem(USERS_STORAGE_KEY);
+    }
+    resetStateToInitial();
+    return HttpResponse.json({ ok: true });
   }),
 ];

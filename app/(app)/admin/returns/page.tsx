@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
@@ -57,7 +57,14 @@ export default function AdminReturnsPage() {
         apiFetchJson<AdminReturnGroup[]>("/api/admin/returns"),
         apiFetchJson<Warehouse[]>("/api/warehouses"),
       ]);
-      setGroups(r.map((group) => ({ ...group, items: group.items || [] })).sort((a, b) => b.boxNo - a.boxNo));
+      setGroups(
+        r
+          .map((group) => ({
+            ...group,
+            items: (group.items || []).filter(Boolean),
+          }))
+          .sort((a, b) => b.boxNo - a.boxNo),
+      );
       setWarehouses(w);
       setSelectedToolIdsByBox({});
       setErr(null);
@@ -138,11 +145,12 @@ export default function AdminReturnsPage() {
       <h1>返却承認</h1>
 
       {groups.length === 0 ? (
-        <p>現在、承認対象の返却申請はありません</p>
+        <p>承認待ちの返却申請はありません。</p>
       ) : (
         groups.map((group) => {
           const selected = selectedForBox(group.boxId);
           const isBusy = submitting.has(group.boxId);
+          const requestedItems = group.items.filter(Boolean);
           return (
             <section key={group.boxId} style={{ marginBottom: 24 }}>
               <h2 style={{ marginBottom: 4 }}>
@@ -161,14 +169,14 @@ export default function AdminReturnsPage() {
                   disabled={selected.size === 0 || isBusy}
                   onClick={() => onApproveSelected(group.boxId)}
                 >
-                  {isBusy ? "処理中..." : "選択分を承認"}
+                  {isBusy ? "処理中..." : "部分承認"}
                 </Button>
               </div>
               <Table>
                 <thead>
                   <tr>
                     <Th>選択</Th>
-                    <Th>ツール名</Th>
+                    <Th>工具名</Th>
                     <Th>資産番号</Th>
                     <Th>倉庫</Th>
                     <Th>期限</Th>
@@ -176,7 +184,7 @@ export default function AdminReturnsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {group.items.map((item) => {
+                  {requestedItems.map((item) => {
                     const checked = selected.has(item.toolId);
                     return (
                       <tr key={`${group.boxId}:${item.toolId}`}>

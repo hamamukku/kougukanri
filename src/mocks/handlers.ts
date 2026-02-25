@@ -37,8 +37,8 @@ function createInitialTools() {
 let tools = loadTools() ?? createInitialTools();
 
 const warehouses = [
-  { id: "w1", name: "第一倉庫" },
-  { id: "w2", name: "第二倉庫" },
+  { id: "w1", name: "隨ｬ荳蛟牙ｺｫ" },
+  { id: "w2", name: "隨ｬ莠悟牙ｺｫ" },
 ];
 
 export const handlers = [
@@ -61,5 +61,36 @@ export const handlers = [
     tools[idx] = { ...tools[idx], status: "available" };
     saveTools(tools);
     return HttpResponse.json({ ok: true, tool: tools[idx] });
+  }),
+  http.post("/api/loans/checkout", async ({ request }) => {
+    await delay(150);
+    let body: any = null;
+    try {
+      body = await request.json();
+    } catch {}
+
+    const ids = Array.isArray(body?.ids) ? body.ids.filter((x: any) => typeof x === "string") : [];
+    if (ids.length === 0) {
+      return HttpResponse.json({ ok: false, message: "ids required" }, { status: 400 });
+    }
+
+    const missing = ids.filter((id: string) => !tools.some((t) => t.id === id));
+    if (missing.length) {
+      return HttpResponse.json({ ok: false, message: "not found", missing }, { status: 404 });
+    }
+
+    const bad = tools.filter((t) => ids.includes(t.id) && t.status !== "available");
+    if (bad.length) {
+      return HttpResponse.json(
+        { ok: false, message: "non-available included", bad },
+        { status: 400 }
+      );
+    }
+
+    tools = tools.map((t) => (ids.includes(t.id) ? { ...t, status: "loaned" } : t));
+    saveTools(tools);
+    const updated = tools.filter((t) => ids.includes(t.id));
+
+    return HttpResponse.json({ ok: true, updated });
   }),
 ];

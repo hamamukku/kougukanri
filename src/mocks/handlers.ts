@@ -2,7 +2,7 @@ import { http, HttpResponse, delay } from "msw";
 
 const statuses = ["available", "loaned", "repairing", "lost"] as const;
 
-const tools = Array.from({ length: 60 }).map((_, i) => {
+let tools = Array.from({ length: 60 }).map((_, i) => {
   const n = i + 1;
   const id = `t${n}`;
   const name = `工具${String(n).padStart(3, "0")}`;
@@ -25,5 +25,16 @@ export const handlers = [
   http.get("/api/warehouses", async () => {
     await delay(150);
     return HttpResponse.json(warehouses);
+  }),
+  http.post("/api/admin/returns/:toolId/approve", async ({ params }) => {
+    await delay(150);
+    const toolId = String(params.toolId);
+    const idx = tools.findIndex((t) => t.id === toolId);
+    if (idx === -1) return new HttpResponse(null, { status: 404 });
+    if (tools[idx].status !== "loaned") {
+      return HttpResponse.json({ ok: false, message: "tool is not loaned" }, { status: 400 });
+    }
+    tools[idx] = { ...tools[idx], status: "available" };
+    return HttpResponse.json({ ok: true, tool: tools[idx] });
   }),
 ];

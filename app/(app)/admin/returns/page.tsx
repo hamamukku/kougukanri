@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import { Table, Td, Th } from "../../../../src/components/ui/Table";
 
@@ -21,24 +21,27 @@ export default function AdminReturnsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [tRes, wRes] = await Promise.all([fetch("/api/tools"), fetch("/api/warehouses")]);
-        if (!tRes.ok) throw new Error(`/api/tools ${tRes.status}`);
-        if (!wRes.ok) throw new Error(`/api/warehouses ${wRes.status}`);
+  const loadData = useCallback(async () => {
+    try {
+      const [tRes, wRes] = await Promise.all([fetch("/api/tools"), fetch("/api/warehouses")]);
+      if (!tRes.ok) throw new Error(`/api/tools ${tRes.status}`);
+      if (!wRes.ok) throw new Error(`/api/warehouses ${wRes.status}`);
 
-        const t = (await tRes.json()) as Tool[];
-        const w = (await wRes.json()) as Warehouse[];
-        setTools(t);
-        setWarehouses(w);
-      } catch (e: unknown) {
-        setErr(e instanceof Error ? e.message : String(e));
-      } finally {
-        setLoading(false);
-      }
-    })();
+      const t = (await tRes.json()) as Tool[];
+      const w = (await wRes.json()) as Warehouse[];
+      setTools(t);
+      setWarehouses(w);
+      setErr(null);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const warehouseNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -48,12 +51,29 @@ export default function AdminReturnsPage() {
 
   const loanedTools = useMemo(() => tools.filter((t) => t.status === "loaned"), [tools]);
 
-  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><pre>error: {err}</pre></main>;
+  const onApprove = async (tool: Tool) => {
+    try {
+      const res = await fetch(`/api/admin/returns/${tool.id}/approve`, { method: "POST" });
+      if (!res.ok) {
+        throw new Error(`/api/admin/returns/${tool.id}/approve ${res.status}`);
+      }
 
-  const onApprove = (tool: Tool) => {
-    alert(`返却承認（ダミー）: ${tool.name}`);
+      await loadData();
+      alert(`返却承認しました: ${tool.name}`);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
   };
+
+  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
+
+  if (err) {
+    return (
+      <main style={{ padding: 16 }}>
+        <pre>error: {err}</pre>
+      </main>
+    );
+  }
 
   return (
     <main style={{ padding: 16 }}>

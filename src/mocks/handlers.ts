@@ -154,7 +154,7 @@ function isDateString(value: unknown): value is string {
 }
 
 function createInitialTools(): Tool[] {
-  return Array.from({ length: 60 }).map((_, index) => {
+  return Array.from({ length: 40 }).map((_, index) => {
     const n = index + 1;
     return {
       id: `t${n}`,
@@ -406,15 +406,15 @@ saveState();
 
 export const handlers = [
   http.get("/api/tools", async () => {
-    await delay(150);
+    await delay(5);
     return HttpResponse.json(tools);
   }),
   http.get("/api/warehouses", async () => {
-    await delay(150);
+    await delay(5);
     return HttpResponse.json(warehouses);
   }),
   http.post("/api/boxes/confirm", async ({ request }) => {
-    await delay(150);
+    await delay(5);
     let body: unknown = null;
     try {
       body = await request.json();
@@ -491,7 +491,7 @@ export const handlers = [
     return HttpResponse.json({ ok: true, boxId });
   }),
   http.get("/api/my/boxes", async ({ request }) => {
-    await delay(150);
+    await delay(5);
     const ownerUsername = getOwnerUsername(request);
     const rawStatus = new URL(request.url).searchParams.get("status");
     const status = rawStatus === "all" ? "all" : "open";
@@ -510,7 +510,7 @@ export const handlers = [
     return HttpResponse.json(result);
   }),
   http.post("/api/my/returns/request", async ({ request }) => {
-    await delay(150);
+    await delay(5);
     let body: unknown = null;
     try {
       body = await request.json();
@@ -559,7 +559,7 @@ export const handlers = [
     return HttpResponse.json({ ok: true });
   }),
   http.get("/api/admin/returns", async () => {
-    await delay(150);
+    await delay(5);
     const toolMap = new Map(tools.map((tool) => [tool.id, tool]));
     const grouped = new Map<string, AdminReturnGroup>();
 
@@ -605,7 +605,7 @@ export const handlers = [
     return HttpResponse.json(result);
   }),
   http.post("/api/admin/returns/approve", async ({ request }) => {
-    await delay(150);
+    await delay(5);
     let body: unknown = null;
     try {
       body = await request.json();
@@ -655,11 +655,11 @@ export const handlers = [
     return HttpResponse.json({ ok: true, boxId, toolIds: Array.from(approvedIds) });
   }),
   http.get("/api/admin/users", async () => {
-    await delay(150);
+    await delay(5);
     return HttpResponse.json(users);
   }),
   http.post("/api/admin/users", async ({ request }) => {
-    await delay(150);
+    await delay(5);
     let body: unknown = null;
     try {
       body = await request.json();
@@ -681,11 +681,11 @@ export const handlers = [
     return HttpResponse.json({ ok: true, user });
   }),
   http.get("/api/admin/warehouses", async () => {
-    await delay(150);
+    await delay(5);
     return HttpResponse.json(warehouses);
   }),
   http.post("/api/admin/warehouses", async ({ request }) => {
-    await delay(150);
+    await delay(5);
     let body: unknown = null;
     try {
       body = await request.json();
@@ -704,11 +704,11 @@ export const handlers = [
     return HttpResponse.json({ ok: true, warehouse });
   }),
   http.get("/api/admin/tools", async () => {
-    await delay(150);
+    await delay(5);
     return HttpResponse.json(tools);
   }),
   http.post("/api/admin/tools", async ({ request }) => {
-    await delay(150);
+    await delay(5);
     let body: unknown = null;
     try {
       body = await request.json();

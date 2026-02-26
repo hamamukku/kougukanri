@@ -160,7 +160,7 @@ curl -i -H "Authorization: Bearer <adminToken>" \
   -H "Content-Type: application/json" \
   -X PATCH \
   -d '{"name":"dummy"}' \
-  "http://localhost:3000/api/admin/tools/00000000-0000-0000-0000-000000000000"
+  "http://localhost:3000/api/admin/tools/11111111-1111-1111-1111-111111111111"
 ```
 
 ## Cron overdue check

@@ -58,9 +58,10 @@ Main variables:
 
 ## sqlc
 ```bash
-cd backend
-sqlc generate
+bash backend/scripts/sqlc_generate.sh
 ```
+
+Recommended version: `sqlc v1.27.0` (recorded in `backend/.sqlc-version.txt`).
 
 Generated query code is stored in `backend/internal/sqlc`.
 

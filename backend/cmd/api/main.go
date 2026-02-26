@@ -17,6 +17,7 @@ import (
 	"kougukanri/backend/internal/cronjob"
 	"kougukanri/backend/internal/db"
 	"kougukanri/backend/internal/mail"
+	"kougukanri/backend/internal/notify"
 )
 
 func main() {
@@ -46,8 +47,9 @@ func main() {
 	} else {
 		mailer = mail.NewNoopMailer()
 	}
+	notifier := notify.NewNotifier(cfg)
 
-	service, err := app.NewService(database, queries, jwtManager, mailer, cfg)
+	service, err := app.NewService(database, queries, jwtManager, mailer, notifier, cfg)
 	if err != nil {
 		log.Fatalf("service init failed: %v", err)
 	}

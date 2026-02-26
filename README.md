@@ -62,7 +62,7 @@ cd backend
 sqlc generate
 ```
 
-Generated query code is stored in `backend/internal/db`.
+Generated query code is stored in `backend/internal/sqlc`.
 
 ## Manual migrate (optional)
 The app already runs migrations automatically. CLI example:

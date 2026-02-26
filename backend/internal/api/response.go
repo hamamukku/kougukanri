@@ -32,7 +32,7 @@ func WriteError(c *gin.Context, err error) {
 		return
 	}
 	if stdErrors.Is(err, sql.ErrNoRows) {
-		c.JSON(http.StatusBadRequest, errorEnvelope{Error: errorBody{Code: "INVALID_REQUEST", Message: "resource not found"}})
+		c.JSON(http.StatusNotFound, errorEnvelope{Error: errorBody{Code: "NOT_FOUND", Message: "resource not found"}})
 		return
 	}
 

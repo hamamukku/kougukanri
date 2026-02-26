@@ -138,6 +138,30 @@ Optional environment overrides:
 - `ADMIN_PASSWORD` (default: `admin123`)
 - `SMOKE_USER_PASSWORD` (default: `user12345`)
 
+## Manual API checks
+Use an admin token from `POST /api/auth/login`.
+
+Invalid `warehouseId` should return `400 INVALID_REQUEST`:
+```bash
+curl -i -H "Authorization: Bearer <adminToken>" \
+  "http://localhost:3000/api/tools?warehouseId=xxx"
+```
+
+`/api/tools` should include `items,page,pageSize,total`:
+```bash
+curl -s -H "Authorization: Bearer <adminToken>" \
+  "http://localhost:3000/api/tools?page=1&pageSize=25"
+```
+
+Use an existing route for `NOT_FOUND` validation:
+```bash
+curl -i -H "Authorization: Bearer <adminToken>" \
+  -H "Content-Type: application/json" \
+  -X PATCH \
+  -d '{"name":"dummy"}' \
+  "http://localhost:3000/api/admin/tools/00000000-0000-0000-0000-000000000000"
+```
+
 ## Cron overdue check
 Cron runs every day at `06:00 JST`.
 

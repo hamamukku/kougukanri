@@ -23,6 +23,7 @@ CREATE TABLE warehouses (
 CREATE TABLE tools (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     asset_no TEXT NOT NULL UNIQUE,
+    tag_id TEXT NULL,
     name TEXT NOT NULL,
     warehouse_id UUID NOT NULL REFERENCES warehouses(id),
     base_status TEXT NOT NULL CHECK (base_status IN ('AVAILABLE', 'BROKEN', 'REPAIR')),
@@ -76,6 +77,7 @@ CREATE TABLE audit_logs (
 );
 
 CREATE INDEX idx_tools_warehouse_id ON tools(warehouse_id);
+CREATE UNIQUE INDEX idx_tools_tag_id_unique ON tools(tag_id) WHERE tag_id IS NOT NULL;
 CREATE INDEX idx_loan_items_tool_id ON loan_items(tool_id);
 CREATE INDEX idx_loan_items_borrower_id ON loan_items(borrower_id);
 CREATE INDEX idx_loan_items_box_id ON loan_items(box_id);

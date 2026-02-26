@@ -80,6 +80,7 @@ migrate -path backend/db/migrations -database "postgres://postgres:postgres@loca
 - `GET /api/warehouses`
 - `POST /api/admin/warehouses`
 - `GET /api/tools`
+- `GET /api/tools/by-tag/:tagId`
 - `GET /api/admin/tools`
 - `GET /api/admin/audit-logs`
 - `POST /api/admin/tools`
@@ -170,6 +171,11 @@ curl -s -H "Authorization: Bearer <adminToken>" \
   "http://localhost:3000/api/admin/audit-logs?page=1&pageSize=25"
 ```
 Response includes `items,page,pageSize,total`.
+
+BLT tag linkage:
+- `tools.tag_id` is nullable `TEXT` with unique constraint (`NULL` allowed multiple times).
+- Admin can update tag by `PATCH /api/admin/tools/:toolId` with `tagId`.
+- Authed users can lookup tool by tag: `GET /api/tools/by-tag/:tagId`.
 
 ## Cron overdue check
 Cron runs every day at `06:00 JST`.

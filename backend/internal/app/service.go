@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	stdErrors "errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"kougukanri/backend/internal/db"
 	apierr "kougukanri/backend/internal/errors"
 	"kougukanri/backend/internal/mail"
+	"kougukanri/backend/internal/notify"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -41,20 +43,25 @@ type Service struct {
 	queries    *db.Queries
 	jwtManager *auth.JWTManager
 	mailer     mail.Mailer
+	notifier   notify.Notifier
 	cfg        config.Config
 	jst        *time.Location
 }
 
-func NewService(database *sql.DB, queries *db.Queries, jwtManager *auth.JWTManager, mailer mail.Mailer, cfg config.Config) (*Service, error) {
+func NewService(database *sql.DB, queries *db.Queries, jwtManager *auth.JWTManager, mailer mail.Mailer, notifier notify.Notifier, cfg config.Config) (*Service, error) {
 	jst, err := time.LoadLocation("Asia/Tokyo")
 	if err != nil {
 		return nil, err
+	}
+	if notifier == nil {
+		notifier = notify.NewNotifier(cfg)
 	}
 	return &Service{
 		db:         database,
 		queries:    queries,
 		jwtManager: jwtManager,
 		mailer:     mailer,
+		notifier:   notifier,
 		cfg:        cfg,
 		jst:        jst,
 	}, nil
@@ -101,6 +108,15 @@ func (s *Service) auditTx(ctx context.Context, qtx *db.Queries, actorID *uuid.UU
 		Payload:    encodedPayload,
 	})
 	return err
+}
+
+func (s *Service) notifyBestEffort(ctx context.Context, kind string, payload any) {
+	if s.notifier == nil {
+		return
+	}
+	if err := s.notifier.Notify(ctx, kind, payload); err != nil {
+		log.Printf("notify failed: kind=%s err=%v", kind, err)
+	}
 }
 
 type LoginResult struct {
@@ -687,11 +703,22 @@ func (s *Service) CreateLoanBox(ctx context.Context, borrowerID uuid.UUID, in Cr
 		return CreateLoanBoxResult{}, err
 	}
 
-	return CreateLoanBoxResult{
+	s.notifyBestEffort(ctx, "loan_box_created", map[string]any{
+		"boxId":            box.ID,
+		"boxDisplayName":   box.DisplayName,
+		"borrowerId":       borrowerID,
+		"startDate":        s.DateString(in.StartDate),
+		"dueDate":          s.DateString(in.DueDate),
+		"toolIds":          ordered,
+		"itemDueOverrides": overridePayload,
+	})
+
+	result := CreateLoanBoxResult{
 		BoxID:          box.ID,
 		BoxDisplayName: box.DisplayName,
 		CreatedItems:   created,
-	}, nil
+	}
+	return result, nil
 }
 
 type MyLoanItem struct {
@@ -777,7 +804,15 @@ func (s *Service) RequestReturn(ctx context.Context, userID uuid.UUID, loanItemI
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	s.notifyBestEffort(ctx, "return_requested", map[string]any{
+		"loanItemId": loanItemID,
+		"borrowerId": userID,
+	})
+	return nil
 }
 
 type ReturnRequestItem struct {
@@ -877,6 +912,11 @@ func (s *Service) ApproveReturnBox(ctx context.Context, adminID uuid.UUID, boxID
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
+
+	s.notifyBestEffort(ctx, "return_approved_box", map[string]any{
+		"boxId":         boxID,
+		"approvedCount": len(items),
+	})
 	return len(items), nil
 }
 
@@ -951,6 +991,12 @@ func (s *Service) ApproveReturnItems(ctx context.Context, adminID uuid.UUID, box
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
+
+	s.notifyBestEffort(ctx, "return_approved_items", map[string]any{
+		"boxId":         boxID,
+		"approvedCount": approved,
+		"loanItemIds":   uniqueIDs,
+	})
 	return approved, nil
 }
 
@@ -988,6 +1034,7 @@ func (s *Service) RunOverdueNotification(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	if len(overdueItems) == 0 {
+		s.notifyBestEffort(ctx, "overdue_mail_sent", map[string]any{"sentCount": 0})
 		return 0, nil
 	}
 
@@ -1051,6 +1098,7 @@ func (s *Service) RunOverdueNotification(ctx context.Context) (int, error) {
 		sent++
 	}
 
+	s.notifyBestEffort(ctx, "overdue_mail_sent", map[string]any{"sentCount": sent})
 	return sent, nil
 }
 

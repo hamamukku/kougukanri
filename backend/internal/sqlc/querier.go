@@ -6,6 +6,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,7 @@ type Querier interface {
 	GetLoanItemInBoxForUpdate(ctx context.Context, id uuid.UUID) (LoanItem, error)
 	GetMaxBorrowerBoxNo(ctx context.Context, borrowerID uuid.UUID) (int32, error)
 	GetToolByID(ctx context.Context, id uuid.UUID) (Tool, error)
+	GetToolByTag(ctx context.Context, tagID sql.NullString) (Tool, error)
 	GetToolForUpdate(ctx context.Context, id uuid.UUID) (Tool, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
 	GetUserByLoginID(ctx context.Context, email string) (GetUserByLoginIDRow, error)
@@ -43,6 +45,7 @@ type Querier interface {
 	LockUserForUpdate(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	MarkLoanItemReturnRequested(ctx context.Context, arg MarkLoanItemReturnRequestedParams) error
 	UpdateTool(ctx context.Context, arg UpdateToolParams) (Tool, error)
+	UpdateToolTag(ctx context.Context, arg UpdateToolTagParams) (Tool, error)
 }
 
 var _ Querier = (*Queries)(nil)

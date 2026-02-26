@@ -14,15 +14,15 @@ INSERT INTO tools (
     NOW(),
     NOW()
 )
-RETURNING id, asset_no, name, warehouse_id, base_status, created_at, updated_at;
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at;
 
 -- name: GetToolByID :one
-SELECT id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
 FROM tools
 WHERE id = $1;
 
 -- name: GetToolForUpdate :one
-SELECT id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
 FROM tools
 WHERE id = $1
 FOR UPDATE;
@@ -34,7 +34,19 @@ SET name = $2,
     base_status = $4,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, asset_no, name, warehouse_id, base_status, created_at, updated_at;
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at;
+
+-- name: UpdateToolTag :one
+UPDATE tools
+SET tag_id = $2,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at;
+
+-- name: GetToolByTag :one
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+FROM tools
+WHERE tag_id = $1;
 
 -- name: CountToolsWithDisplay :one
 WITH tool_state AS (

@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -112,7 +113,7 @@ INSERT INTO tools (
     NOW(),
     NOW()
 )
-RETURNING id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
 `
 
 type CreateToolParams struct {
@@ -133,6 +134,7 @@ func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, e
 	err := row.Scan(
 		&i.ID,
 		&i.AssetNo,
+		&i.TagID,
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
@@ -143,7 +145,7 @@ func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, e
 }
 
 const getToolByID = `-- name: GetToolByID :one
-SELECT id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
 FROM tools
 WHERE id = $1
 `
@@ -154,6 +156,29 @@ func (q *Queries) GetToolByID(ctx context.Context, id uuid.UUID) (Tool, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.AssetNo,
+		&i.TagID,
+		&i.Name,
+		&i.WarehouseID,
+		&i.BaseStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getToolByTag = `-- name: GetToolByTag :one
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+FROM tools
+WHERE tag_id = $1
+`
+
+func (q *Queries) GetToolByTag(ctx context.Context, tagID sql.NullString) (Tool, error) {
+	row := q.db.QueryRowContext(ctx, getToolByTag, tagID)
+	var i Tool
+	err := row.Scan(
+		&i.ID,
+		&i.AssetNo,
+		&i.TagID,
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
@@ -164,7 +189,7 @@ func (q *Queries) GetToolByID(ctx context.Context, id uuid.UUID) (Tool, error) {
 }
 
 const getToolForUpdate = `-- name: GetToolForUpdate :one
-SELECT id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
 FROM tools
 WHERE id = $1
 FOR UPDATE
@@ -176,6 +201,7 @@ func (q *Queries) GetToolForUpdate(ctx context.Context, id uuid.UUID) (Tool, err
 	err := row.Scan(
 		&i.ID,
 		&i.AssetNo,
+		&i.TagID,
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
@@ -355,7 +381,7 @@ SET name = $2,
     base_status = $4,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, asset_no, name, warehouse_id, base_status, created_at, updated_at
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
 `
 
 type UpdateToolParams struct {
@@ -376,6 +402,36 @@ func (q *Queries) UpdateTool(ctx context.Context, arg UpdateToolParams) (Tool, e
 	err := row.Scan(
 		&i.ID,
 		&i.AssetNo,
+		&i.TagID,
+		&i.Name,
+		&i.WarehouseID,
+		&i.BaseStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateToolTag = `-- name: UpdateToolTag :one
+UPDATE tools
+SET tag_id = $2,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+`
+
+type UpdateToolTagParams struct {
+	ID    uuid.UUID      `json:"id"`
+	TagID sql.NullString `json:"tag_id"`
+}
+
+func (q *Queries) UpdateToolTag(ctx context.Context, arg UpdateToolTagParams) (Tool, error) {
+	row := q.db.QueryRowContext(ctx, updateToolTag, arg.ID, arg.TagID)
+	var i Tool
+	err := row.Scan(
+		&i.ID,
+		&i.AssetNo,
+		&i.TagID,
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,

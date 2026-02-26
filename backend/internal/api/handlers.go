@@ -113,12 +113,13 @@ type createWarehouseRequest struct {
 }
 
 func (h *Handler) createWarehouse(c *gin.Context) {
+	user, _ := CurrentUser(c)
 	var req createWarehouseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
 		return
 	}
-	item, err := h.svc.CreateWarehouse(c.Request.Context(), req.Name)
+	item, err := h.svc.CreateWarehouse(c.Request.Context(), user.ID, req.Name)
 	if err != nil {
 		WriteError(c, err)
 		return
@@ -128,10 +129,15 @@ func (h *Handler) createWarehouse(c *gin.Context) {
 
 func (h *Handler) listTools(c *gin.Context) {
 	user, _ := CurrentUser(c)
+	warehouseID, err := parseOptionalWarehouseID(c.Query("warehouseId"))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("warehouseId is invalid", map[string]any{"warehouseId": c.Query("warehouseId")}))
+		return
+	}
 	filter := app.ToolListFilter{
 		Q:           c.Query("q"),
 		Mode:        c.DefaultQuery("mode", "partial"),
-		WarehouseID: c.Query("warehouseId"),
+		WarehouseID: warehouseID,
 		Status:      c.Query("status"),
 		Page:        parsePositiveInt(c.Query("page"), 1),
 		PageSize:    parsePositiveInt(c.DefaultQuery("pageSize", "25"), 25),
@@ -139,14 +145,14 @@ func (h *Handler) listTools(c *gin.Context) {
 	if filter.PageSize > 100 {
 		filter.PageSize = 100
 	}
-	items, err := h.svc.ListTools(c.Request.Context(), user.ID, filter)
+	result, err := h.svc.ListTools(c.Request.Context(), user.ID, filter)
 	if err != nil {
 		WriteError(c, err)
 		return
 	}
 
-	resp := make([]gin.H, 0, len(items))
-	for _, t := range items {
+	resp := make([]gin.H, 0, len(result.Items))
+	for _, t := range result.Items {
 		resp = append(resp, gin.H{
 			"id":                          t.ID,
 			"assetNo":                     t.AssetNo,
@@ -165,15 +171,21 @@ func (h *Handler) listTools(c *gin.Context) {
 		"items":    resp,
 		"page":     filter.Page,
 		"pageSize": filter.PageSize,
+		"total":    result.Total,
 	})
 }
 
 func (h *Handler) listAdminTools(c *gin.Context) {
 	user, _ := CurrentUser(c)
+	warehouseID, err := parseOptionalWarehouseID(c.Query("warehouseId"))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("warehouseId is invalid", map[string]any{"warehouseId": c.Query("warehouseId")}))
+		return
+	}
 	filter := app.ToolListFilter{
 		Q:           c.Query("q"),
 		Mode:        c.DefaultQuery("mode", "partial"),
-		WarehouseID: c.Query("warehouseId"),
+		WarehouseID: warehouseID,
 		Status:      c.Query("status"),
 		Page:        parsePositiveInt(c.Query("page"), 1),
 		PageSize:    parsePositiveInt(c.DefaultQuery("pageSize", "25"), 25),
@@ -181,14 +193,14 @@ func (h *Handler) listAdminTools(c *gin.Context) {
 	if filter.PageSize > 100 {
 		filter.PageSize = 100
 	}
-	items, err := h.svc.ListTools(c.Request.Context(), user.ID, filter)
+	result, err := h.svc.ListAdminTools(c.Request.Context(), user.ID, filter)
 	if err != nil {
 		WriteError(c, err)
 		return
 	}
 
-	resp := make([]gin.H, 0, len(items))
-	for _, t := range items {
+	resp := make([]gin.H, 0, len(result.Items))
+	for _, t := range result.Items {
 		resp = append(resp, gin.H{
 			"id":                          t.ID,
 			"assetNo":                     t.AssetNo,
@@ -207,6 +219,7 @@ func (h *Handler) listAdminTools(c *gin.Context) {
 		"items":    resp,
 		"page":     filter.Page,
 		"pageSize": filter.PageSize,
+		"total":    result.Total,
 	})
 }
 
@@ -218,6 +231,7 @@ type createToolRequest struct {
 }
 
 func (h *Handler) createTool(c *gin.Context) {
+	user, _ := CurrentUser(c)
 	var req createToolRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
@@ -229,7 +243,7 @@ func (h *Handler) createTool(c *gin.Context) {
 		return
 	}
 
-	tool, err := h.svc.CreateTool(c.Request.Context(), req.AssetNo, req.Name, warehouseID, req.BaseStatus)
+	tool, err := h.svc.CreateTool(c.Request.Context(), user.ID, req.AssetNo, req.Name, warehouseID, req.BaseStatus)
 	if err != nil {
 		WriteError(c, err)
 		return
@@ -250,6 +264,7 @@ type patchToolRequest struct {
 }
 
 func (h *Handler) patchTool(c *gin.Context) {
+	user, _ := CurrentUser(c)
 	toolID, err := uuid.Parse(c.Param("toolId"))
 	if err != nil {
 		WriteError(c, apierr.InvalidRequest("toolId is invalid", nil))
@@ -271,7 +286,7 @@ func (h *Handler) patchTool(c *gin.Context) {
 		warehouseID = &parsed
 	}
 
-	tool, err := h.svc.UpdateTool(c.Request.Context(), toolID, app.UpdateToolInput{
+	tool, err := h.svc.UpdateTool(c.Request.Context(), user.ID, toolID, app.UpdateToolInput{
 		Name:        req.Name,
 		WarehouseID: warehouseID,
 		BaseStatus:  req.BaseStatus,
@@ -542,6 +557,18 @@ func parsePositiveInt(v string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func parseOptionalWarehouseID(raw string) (string, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", nil
+	}
+	id, err := uuid.Parse(v)
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
 }
 
 func nullableString(v string) any {

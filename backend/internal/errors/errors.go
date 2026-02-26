@@ -34,7 +34,7 @@ func Conflict(code, message string, details any) *APIError {
 }
 
 func NotFound(message string) *APIError {
-	return New(http.StatusNotFound, "INVALID_REQUEST", message, nil)
+	return New(http.StatusNotFound, "NOT_FOUND", message, nil)
 }
 
 func Internal(message string) *APIError {

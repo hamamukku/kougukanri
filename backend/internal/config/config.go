@@ -7,42 +7,44 @@ import (
 )
 
 type Config struct {
-	Port string
-	DBURL string
-	JWTSecret string
+	Port            string
+	DBURL           string
+	JWTSecret       string
 	JWTExpiresHours int
-	MigrationsPath string
+	MigrationsPath  string
 
-	SMTPHost string
-	SMTPPort int
+	SMTPHost     string
+	SMTPPort     int
 	SMTPUsername string
 	SMTPPassword string
-	SMTPFrom string
+	SMTPFrom     string
 
 	CronEnabled bool
 
-	SeedAdminUsername string
-	SeedAdminEmail string
-	SeedAdminPassword string
+	EnableSeedAdmin     bool
+	SeedAdminUsername   string
+	SeedAdminEmail      string
+	SeedAdminPassword   string
 	SeedAdminDepartment string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Port:              getEnv("PORT", "3000"),
-		DBURL:             os.Getenv("DATABASE_URL"),
-		JWTSecret:         getEnv("JWT_SECRET", "change-me"),
-		JWTExpiresHours:   getEnvInt("JWT_EXPIRES_HOURS", 24),
-		MigrationsPath:    getEnv("MIGRATIONS_PATH", "file://./db/migrations"),
-		SMTPHost:          os.Getenv("SMTP_HOST"),
-		SMTPPort:          getEnvInt("SMTP_PORT", 587),
-		SMTPUsername:      os.Getenv("SMTP_USERNAME"),
-		SMTPPassword:      os.Getenv("SMTP_PASSWORD"),
-		SMTPFrom:          os.Getenv("SMTP_FROM"),
-		CronEnabled:       getEnvBool("CRON_ENABLED", true),
-		SeedAdminUsername: os.Getenv("SEED_ADMIN_USERNAME"),
-		SeedAdminEmail:    os.Getenv("SEED_ADMIN_EMAIL"),
-		SeedAdminPassword: os.Getenv("SEED_ADMIN_PASSWORD"),
+		Port:                getEnv("PORT", "3000"),
+		DBURL:               os.Getenv("DATABASE_URL"),
+		JWTSecret:           getEnv("JWT_SECRET", "change-me"),
+		JWTExpiresHours:     getEnvInt("JWT_EXPIRES_HOURS", 24),
+		MigrationsPath:      getEnv("MIGRATIONS_PATH", "file://./db/migrations"),
+		SMTPHost:            os.Getenv("SMTP_HOST"),
+		SMTPPort:            getEnvInt("SMTP_PORT", 587),
+		SMTPUsername:        os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:        os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:            os.Getenv("SMTP_FROM"),
+		CronEnabled:         getEnvBool("CRON_ENABLED", true),
+		EnableSeedAdmin:     getEnvBool("ENABLE_SEED_ADMIN", false),
+		SeedAdminUsername:   os.Getenv("SEED_ADMIN_USERNAME"),
+		SeedAdminEmail:      os.Getenv("SEED_ADMIN_EMAIL"),
+		SeedAdminPassword:   os.Getenv("SEED_ADMIN_PASSWORD"),
 		SeedAdminDepartment: getEnv("SEED_ADMIN_DEPARTMENT", "system"),
 	}
 

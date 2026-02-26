@@ -3,16 +3,17 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	stdErrors "errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
-	apierr "kougukanri/backend/internal/errors"
 	"kougukanri/backend/internal/auth"
 	"kougukanri/backend/internal/config"
 	"kougukanri/backend/internal/db"
+	apierr "kougukanri/backend/internal/errors"
 	"kougukanri/backend/internal/mail"
 
 	"github.com/google/uuid"
@@ -74,6 +75,32 @@ func (s *Service) DateString(v time.Time) string {
 		return ""
 	}
 	return v.In(s.jst).Format("2006-01-02")
+}
+
+func (s *Service) auditTx(ctx context.Context, qtx *db.Queries, actorID *uuid.UUID, action, targetType string, targetID uuid.UUID, payload any) error {
+	encodedPayload, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	var actor uuid.NullUUID
+	if actorID != nil && *actorID != uuid.Nil {
+		actor = uuid.NullUUID{UUID: *actorID, Valid: true}
+	}
+
+	var target uuid.NullUUID
+	if targetID != uuid.Nil {
+		target = uuid.NullUUID{UUID: targetID, Valid: true}
+	}
+
+	_, err = qtx.CreateAuditLog(ctx, db.CreateAuditLogParams{
+		ActorID:    actor,
+		Action:     action,
+		TargetType: targetType,
+		TargetID:   target,
+		Payload:    encodedPayload,
+	})
+	return err
 }
 
 type LoginResult struct {
@@ -176,7 +203,20 @@ type ToolListItem struct {
 	IsReservedByMe              bool
 }
 
-func (s *Service) ListTools(ctx context.Context, currentUserID uuid.UUID, filter ToolListFilter) ([]ToolListItem, error) {
+type ToolListResult struct {
+	Items []ToolListItem
+	Total int64
+}
+
+func (s *Service) ListTools(ctx context.Context, currentUserID uuid.UUID, filter ToolListFilter) (ToolListResult, error) {
+	return s.listTools(ctx, currentUserID, filter)
+}
+
+func (s *Service) ListAdminTools(ctx context.Context, currentUserID uuid.UUID, filter ToolListFilter) (ToolListResult, error) {
+	return s.listTools(ctx, currentUserID, filter)
+}
+
+func (s *Service) listTools(ctx context.Context, currentUserID uuid.UUID, filter ToolListFilter) (ToolListResult, error) {
 	page := filter.Page
 	if page <= 0 {
 		page = 1
@@ -191,23 +231,35 @@ func (s *Service) ListTools(ctx context.Context, currentUserID uuid.UUID, filter
 
 	status := strings.ToUpper(strings.TrimSpace(filter.Status))
 	if status != "" && !ValidateDisplayStatus(status) {
-		return nil, apierr.InvalidRequest("invalid status", map[string]any{"status": filter.Status})
+		return ToolListResult{}, apierr.InvalidRequest("invalid status", map[string]any{"status": filter.Status})
 	}
 
 	q := strings.TrimSpace(filter.Q)
 	warehouseID := strings.TrimSpace(filter.WarehouseID)
+	mode := normalizeMode(filter.Mode)
+	total, err := s.queries.CountToolsWithDisplay(ctx, db.CountToolsWithDisplayParams{
+		Today:       s.DateString(s.TodayJST()),
+		WarehouseID: warehouseID,
+		Q:           q,
+		Mode:        mode,
+		Status:      status,
+	})
+	if err != nil {
+		return ToolListResult{}, err
+	}
+
 	rows, err := s.queries.ListToolsWithDisplay(ctx, db.ListToolsWithDisplayParams{
 		Today:       s.DateString(s.TodayJST()),
 		WarehouseID: warehouseID,
 		Q:           q,
-		Mode:        normalizeMode(filter.Mode),
+		Mode:        mode,
 		RequesterID: currentUserID,
 		Status:      status,
 		Limit:       int32(pageSize),
 		Offset:      int32((page - 1) * pageSize),
 	})
 	if err != nil {
-		return nil, err
+		return ToolListResult{}, err
 	}
 
 	items := make([]ToolListItem, 0, len(rows))
@@ -231,29 +283,48 @@ func (s *Service) ListTools(ctx context.Context, currentUserID uuid.UUID, filter
 		}
 		items = append(items, item)
 	}
-	return items, nil
+	return ToolListResult{Items: items, Total: total}, nil
 }
 
 func (s *Service) ListWarehouses(ctx context.Context) ([]db.Warehouse, error) {
 	return s.queries.ListWarehouses(ctx)
 }
 
-func (s *Service) CreateWarehouse(ctx context.Context, name string) (db.Warehouse, error) {
+func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name string) (db.Warehouse, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return db.Warehouse{}, apierr.InvalidRequest("name is required", nil)
 	}
-	warehouse, err := s.queries.CreateWarehouse(ctx, name)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.Warehouse{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	warehouse, err := qtx.CreateWarehouse(ctx, name)
 	if err != nil {
 		if mapped := mapPQError(err); mapped != nil {
 			return db.Warehouse{}, mapped
 		}
 		return db.Warehouse{}, err
 	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "create_warehouse", "warehouse", warehouse.ID, map[string]any{
+		"name": warehouse.Name,
+	}); err != nil {
+		return db.Warehouse{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return db.Warehouse{}, err
+	}
+
 	return warehouse, nil
 }
 
-func (s *Service) CreateTool(ctx context.Context, assetNo, name string, warehouseID uuid.UUID, baseStatus string) (db.Tool, error) {
+func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, name string, warehouseID uuid.UUID, baseStatus string) (db.Tool, error) {
 	assetNo = strings.TrimSpace(assetNo)
 	name = strings.TrimSpace(name)
 	baseStatus = strings.ToUpper(strings.TrimSpace(baseStatus))
@@ -267,7 +338,14 @@ func (s *Service) CreateTool(ctx context.Context, assetNo, name string, warehous
 		return db.Tool{}, apierr.InvalidRequest("invalid baseStatus", map[string]any{"baseStatus": baseStatus})
 	}
 
-	tool, err := s.queries.CreateTool(ctx, db.CreateToolParams{
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.Tool{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	tool, err := qtx.CreateTool(ctx, db.CreateToolParams{
 		AssetNo:     assetNo,
 		Name:        name,
 		WarehouseID: warehouseID,
@@ -279,21 +357,45 @@ func (s *Service) CreateTool(ctx context.Context, assetNo, name string, warehous
 		}
 		return db.Tool{}, err
 	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "create_tool", "tool", tool.ID, map[string]any{
+		"assetNo":     tool.AssetNo,
+		"name":        tool.Name,
+		"warehouseId": tool.WarehouseID,
+		"baseStatus":  tool.BaseStatus,
+	}); err != nil {
+		return db.Tool{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.Tool{}, mapped
+		}
+		return db.Tool{}, err
+	}
+
 	return tool, nil
 }
 
 type UpdateToolInput struct {
-	Name       *string
+	Name        *string
 	WarehouseID *uuid.UUID
-	BaseStatus *string
+	BaseStatus  *string
 }
 
-func (s *Service) UpdateTool(ctx context.Context, toolID uuid.UUID, in UpdateToolInput) (db.Tool, error) {
+func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid.UUID, in UpdateToolInput) (db.Tool, error) {
 	if toolID == uuid.Nil {
 		return db.Tool{}, apierr.InvalidRequest("toolId is required", nil)
 	}
 
-	current, err := s.queries.GetToolByID(ctx, toolID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.Tool{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	current, err := qtx.GetToolForUpdate(ctx, toolID)
 	if err != nil {
 		if stdErrors.Is(err, sql.ErrNoRows) {
 			return db.Tool{}, apierr.NotFound("tool not found")
@@ -304,6 +406,7 @@ func (s *Service) UpdateTool(ctx context.Context, toolID uuid.UUID, in UpdateToo
 	name := current.Name
 	warehouseID := current.WarehouseID
 	baseStatus := current.BaseStatus
+	changedFields := make(map[string]any)
 
 	if in.Name != nil {
 		trimmed := strings.TrimSpace(*in.Name)
@@ -311,12 +414,18 @@ func (s *Service) UpdateTool(ctx context.Context, toolID uuid.UUID, in UpdateToo
 			return db.Tool{}, apierr.InvalidRequest("name cannot be empty", nil)
 		}
 		name = trimmed
+		if trimmed != current.Name {
+			changedFields["name"] = trimmed
+		}
 	}
 	if in.WarehouseID != nil {
 		if *in.WarehouseID == uuid.Nil {
 			return db.Tool{}, apierr.InvalidRequest("warehouseId is invalid", nil)
 		}
 		warehouseID = *in.WarehouseID
+		if *in.WarehouseID != current.WarehouseID {
+			changedFields["warehouseId"] = in.WarehouseID.String()
+		}
 	}
 	if in.BaseStatus != nil {
 		v := strings.ToUpper(strings.TrimSpace(*in.BaseStatus))
@@ -324,9 +433,12 @@ func (s *Service) UpdateTool(ctx context.Context, toolID uuid.UUID, in UpdateToo
 			return db.Tool{}, apierr.InvalidRequest("invalid baseStatus", nil)
 		}
 		baseStatus = v
+		if v != current.BaseStatus {
+			changedFields["baseStatus"] = v
+		}
 	}
 
-	updated, err := s.queries.UpdateTool(ctx, db.UpdateToolParams{
+	updated, err := qtx.UpdateTool(ctx, db.UpdateToolParams{
 		ID:          toolID,
 		Name:        name,
 		WarehouseID: warehouseID,
@@ -338,6 +450,20 @@ func (s *Service) UpdateTool(ctx context.Context, toolID uuid.UUID, in UpdateToo
 		}
 		return db.Tool{}, err
 	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "update_tool", "tool", toolID, map[string]any{
+		"changedFields": changedFields,
+	}); err != nil {
+		return db.Tool{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.Tool{}, mapped
+		}
+		return db.Tool{}, err
+	}
+
 	return updated, nil
 }
 
@@ -398,9 +524,9 @@ type CreatedLoanItem struct {
 }
 
 type CreateLoanBoxResult struct {
-	BoxID         uuid.UUID
+	BoxID          uuid.UUID
 	BoxDisplayName string
-	CreatedItems  []CreatedLoanItem
+	CreatedItems   []CreatedLoanItem
 }
 
 func (s *Service) CreateLoanBox(ctx context.Context, borrowerID uuid.UUID, in CreateLoanBoxInput) (CreateLoanBoxResult, error) {
@@ -540,6 +666,20 @@ func (s *Service) CreateLoanBox(ctx context.Context, borrowerID uuid.UUID, in Cr
 		})
 	}
 
+	overridePayload := make(map[string]string, len(in.ItemDueOverrides))
+	for toolID, dueDate := range in.ItemDueOverrides {
+		overridePayload[toolID.String()] = s.DateString(dueDate)
+	}
+	actorID := borrowerID
+	if err := s.auditTx(ctx, qtx, &actorID, "create_loan_box", "loan_box", box.ID, map[string]any{
+		"startDate":        s.DateString(in.StartDate),
+		"dueDate":          s.DateString(in.DueDate),
+		"toolIds":          ordered,
+		"itemDueOverrides": overridePayload,
+	}); err != nil {
+		return CreateLoanBoxResult{}, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		if mapped := mapPQError(err); mapped != nil {
 			return CreateLoanBoxResult{}, mapped
@@ -555,16 +695,16 @@ func (s *Service) CreateLoanBox(ctx context.Context, borrowerID uuid.UUID, in Cr
 }
 
 type MyLoanItem struct {
-	LoanItemID         uuid.UUID
-	BoxID              uuid.UUID
-	BoxDisplayName     string
-	ToolID             uuid.UUID
-	AssetNo            string
-	ToolName           string
-	StartDate          string
-	DueDate            string
-	LoanStatus         string
-	ReturnRequestedAt  string
+	LoanItemID        uuid.UUID
+	BoxID             uuid.UUID
+	BoxDisplayName    string
+	ToolID            uuid.UUID
+	AssetNo           string
+	ToolName          string
+	StartDate         string
+	DueDate           string
+	LoanStatus        string
+	ReturnRequestedAt string
 }
 
 func (s *Service) ListMyOpenLoans(ctx context.Context, userID uuid.UUID) ([]MyLoanItem, error) {
@@ -632,6 +772,11 @@ func (s *Service) RequestReturn(ctx context.Context, userID uuid.UUID, loanItemI
 		return err
 	}
 
+	actorID := userID
+	if err := s.auditTx(ctx, qtx, &actorID, "request_return", "loan_item", loanItemID, map[string]any{}); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 
@@ -646,12 +791,12 @@ type ReturnRequestItem struct {
 }
 
 type ReturnRequestBox struct {
-	BoxID             uuid.UUID
-	BoxDisplayName    string
-	BorrowerUsername  string
-	StartDate         string
-	DueDate           string
-	Items             []ReturnRequestItem
+	BoxID            uuid.UUID
+	BoxDisplayName   string
+	BorrowerUsername string
+	StartDate        string
+	DueDate          string
+	Items            []ReturnRequestItem
 }
 
 func (s *Service) ListReturnRequests(ctx context.Context) ([]ReturnRequestBox, error) {
@@ -724,6 +869,11 @@ func (s *Service) ApproveReturnBox(ctx context.Context, adminID uuid.UUID, boxID
 		}
 	}
 
+	actorID := adminID
+	if err := s.auditTx(ctx, qtx, &actorID, "approve_return_box", "loan_box", boxID, map[string]any{}); err != nil {
+		return 0, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
@@ -790,6 +940,14 @@ func (s *Service) ApproveReturnItems(ctx context.Context, adminID uuid.UUID, box
 	if approved == 0 {
 		return 0, apierr.Conflict("NOTHING_TO_APPROVE", "no requested items to approve", nil)
 	}
+
+	actorID := adminID
+	if err := s.auditTx(ctx, qtx, &actorID, "approve_return_items", "loan_box", boxID, map[string]any{
+		"loanItemIds": uniqueIDs,
+	}); err != nil {
+		return 0, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
@@ -797,6 +955,10 @@ func (s *Service) ApproveReturnItems(ctx context.Context, adminID uuid.UUID, box
 }
 
 func (s *Service) EnsureSeedAdmin(ctx context.Context) error {
+	if !s.cfg.EnableSeedAdmin {
+		return nil
+	}
+
 	if s.cfg.SeedAdminUsername == "" || s.cfg.SeedAdminEmail == "" || s.cfg.SeedAdminPassword == "" {
 		return nil
 	}

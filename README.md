@@ -33,10 +33,17 @@ Endpoints:
 The API applies migrations automatically at startup.
 
 ## Seed admin
-`docker-compose.yml` sets seed values. If `users` table is empty, one admin is created:
+Seed admin creation runs only when `ENABLE_SEED_ADMIN=true`.
+
+`docker-compose.yml` enables seed for local dev. If `users` table is empty, one admin is created:
 - username: `admin`
 - email: `admin@example.com`
 - password: `admin123`
+
+Operational caution:
+- Change the initial password immediately in production.
+- Disable seed admin after bootstrap (`ENABLE_SEED_ADMIN=false`).
+- Removing `SEED_ADMIN_*` variables after bootstrap is recommended.
 
 ## Environment variables
 Template: `backend/.env.example`
@@ -46,6 +53,7 @@ Main variables:
 - `JWT_SECRET`
 - `MIGRATIONS_PATH`
 - `CRON_ENABLED`
+- `ENABLE_SEED_ADMIN`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`
 
 ## sqlc
@@ -54,7 +62,7 @@ cd backend
 sqlc generate
 ```
 
-sqlc output path is `backend/internal/sqlc`.
+Generated query code is stored in `backend/internal/db`.
 
 ## Manual migrate (optional)
 The app already runs migrations automatically. CLI example:
@@ -91,6 +99,17 @@ migrate -path backend/db/migrations -database "postgres://postgres:postgres@loca
 }
 ```
 
+## Error codes
+- `NOT_FOUND`
+- `INVALID_REQUEST`
+- `UNAUTHORIZED`
+- `FORBIDDEN`
+- `RESERVATION_CONFLICT`
+- `TOOL_NOT_AVAILABLE`
+- `TOOL_RESERVED_BY_OTHER`
+- `ALREADY_REQUESTED`
+- `ALREADY_APPROVED`
+
 ## Minimum flow check
 1. Login as seed admin.
 2. Create warehouse as admin.
@@ -103,6 +122,21 @@ migrate -path backend/db/migrations -database "postgres://postgres:postgres@loca
 
 ## Reservation overlap check
 Create overlapping period for same tool and confirm `409 RESERVATION_CONFLICT`.
+
+## Reservation policy
+予約最優先。開始前でも他人は借りられない。  
+If another user has a future reservation for a tool, loans with `startDate <= today` are blocked with `TOOL_RESERVED_BY_OTHER`.
+
+## E2E smoke script
+```bash
+bash backend/scripts/e2e_smoke.sh
+```
+
+Optional environment overrides:
+- `BASE_URL` (default: `http://localhost:3000`)
+- `ADMIN_LOGIN_ID` (default: `admin`)
+- `ADMIN_PASSWORD` (default: `admin123`)
+- `SMOKE_USER_PASSWORD` (default: `user12345`)
 
 ## Cron overdue check
 Cron runs every day at `06:00 JST`.

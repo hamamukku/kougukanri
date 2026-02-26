@@ -36,6 +36,68 @@ SET name = $2,
 WHERE id = $1
 RETURNING id, asset_no, name, warehouse_id, base_status, created_at, updated_at;
 
+-- name: CountToolsWithDisplay :one
+WITH tool_state AS (
+    SELECT
+        t.id,
+        t.asset_no,
+        t.name,
+        t.warehouse_id,
+        w.name AS warehouse_name,
+        t.base_status,
+        loan.start_date AS loan_start_date,
+        loan.due_date AS loan_due_date,
+        reserve.start_date AS reserved_start_date,
+        reserve.due_date AS reserved_due_date,
+        reserve.borrower_id AS reserved_by
+    FROM tools t
+    JOIN warehouses w ON w.id = t.warehouse_id
+    LEFT JOIN LATERAL (
+        SELECT li.start_date, li.due_date, li.borrower_id
+        FROM loan_items li
+        WHERE li.tool_id = t.id
+          AND li.return_approved_at IS NULL
+          AND li.start_date <= $1::date
+        ORDER BY li.start_date DESC
+        LIMIT 1
+    ) AS loan ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT li.start_date, li.due_date, li.borrower_id
+        FROM loan_items li
+        WHERE li.tool_id = t.id
+          AND li.return_approved_at IS NULL
+          AND li.start_date > $1::date
+        ORDER BY li.start_date ASC
+        LIMIT 1
+    ) AS reserve ON TRUE
+    WHERE
+        (NULLIF($2::text, '') IS NULL OR t.warehouse_id = NULLIF($2::text, '')::uuid)
+        AND (
+            $3::text = ''
+            OR (
+                CASE
+                    WHEN $4::text = 'exact' THEN (t.name = $3::text OR t.asset_no = $3::text)
+                    ELSE (t.name ILIKE '%' || $3::text || '%' OR t.asset_no ILIKE '%' || $3::text || '%')
+                END
+            )
+        )
+)
+SELECT COUNT(*)::bigint AS total
+FROM tool_state
+WHERE
+    (
+        $5::text = ''
+        OR (
+            CASE
+                WHEN base_status = 'BROKEN' THEN 'BROKEN'
+                WHEN base_status = 'REPAIR' THEN 'REPAIR'
+                WHEN loan_start_date IS NOT NULL THEN 'LOANED'
+                WHEN reserved_start_date IS NOT NULL THEN 'RESERVED'
+                ELSE 'AVAILABLE'
+            END = $5::text
+        )
+    );
+
 -- name: ListToolsWithDisplay :many
 WITH tool_state AS (
     SELECT

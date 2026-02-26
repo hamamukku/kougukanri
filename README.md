@@ -55,6 +55,8 @@ Main variables:
 - `CRON_ENABLED`
 - `ENABLE_SEED_ADMIN`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`
+- `NOTIFY_WEBHOOK_URL` (unset means noop notifier)
+- `NOTIFY_ENABLED` (optional; defaults to enabled when webhook URL is set)
 
 ## sqlc
 ```bash

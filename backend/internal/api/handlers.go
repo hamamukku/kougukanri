@@ -1,6 +1,8 @@
 package api
 
 import (
+	"database/sql"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,6 +39,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	authed.GET("/auth/me", h.me)
 	authed.GET("/warehouses", h.listWarehouses)
 	authed.GET("/tools", h.listTools)
+	authed.GET("/tools/by-tag/:tagId", h.getToolByTag)
 
 	authed.POST("/loan-boxes", h.createLoanBox)
 	authed.GET("/my/loans", h.listMyLoans)
@@ -315,16 +318,38 @@ func (h *Handler) createTool(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"id":          tool.ID,
 		"assetNo":     tool.AssetNo,
+		"tagId":       nullableNullString(tool.TagID),
 		"name":        tool.Name,
 		"warehouseId": tool.WarehouseID,
 		"baseStatus":  tool.BaseStatus,
 	})
 }
 
+type optionalString struct {
+	Set   bool
+	Value *string
+}
+
+func (o *optionalString) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+
+	var v string
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	o.Value = &v
+	return nil
+}
+
 type patchToolRequest struct {
-	Name        *string `json:"name"`
-	WarehouseID *string `json:"warehouseId"`
-	BaseStatus  *string `json:"baseStatus"`
+	Name        *string        `json:"name"`
+	WarehouseID *string        `json:"warehouseId"`
+	BaseStatus  *string        `json:"baseStatus"`
+	TagID       optionalString `json:"tagId"`
 }
 
 func (h *Handler) patchTool(c *gin.Context) {
@@ -354,6 +379,8 @@ func (h *Handler) patchTool(c *gin.Context) {
 		Name:        req.Name,
 		WarehouseID: warehouseID,
 		BaseStatus:  req.BaseStatus,
+		TagID:       req.TagID.Value,
+		TagIDSet:    req.TagID.Set,
 	})
 	if err != nil {
 		WriteError(c, err)
@@ -362,6 +389,30 @@ func (h *Handler) patchTool(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":          tool.ID,
 		"assetNo":     tool.AssetNo,
+		"tagId":       nullableNullString(tool.TagID),
+		"name":        tool.Name,
+		"warehouseId": tool.WarehouseID,
+		"baseStatus":  tool.BaseStatus,
+	})
+}
+
+func (h *Handler) getToolByTag(c *gin.Context) {
+	tagID := strings.TrimSpace(c.Param("tagId"))
+	if tagID == "" {
+		WriteError(c, apierr.InvalidRequest("tagId is required", nil))
+		return
+	}
+
+	tool, err := h.svc.GetToolByTag(c.Request.Context(), tagID)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":          tool.ID,
+		"assetNo":     tool.AssetNo,
+		"tagId":       nullableNullString(tool.TagID),
 		"name":        tool.Name,
 		"warehouseId": tool.WarehouseID,
 		"baseStatus":  tool.BaseStatus,
@@ -670,4 +721,11 @@ func nullableString(v string) any {
 		return nil
 	}
 	return v
+}
+
+func nullableNullString(v sql.NullString) any {
+	if !v.Valid || strings.TrimSpace(v.String) == "" {
+		return nil
+	}
+	return v.String
 }

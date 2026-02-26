@@ -40,6 +40,7 @@ type Warehouse struct {
 type Tool struct {
 	ID          uuid.UUID
 	AssetNo     string
+	TagID       sql.NullString
 	Name        string
 	WarehouseID uuid.UUID
 	BaseStatus  string

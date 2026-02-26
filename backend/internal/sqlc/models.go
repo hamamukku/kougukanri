@@ -49,13 +49,14 @@ type LoanItem struct {
 }
 
 type Tool struct {
-	ID          uuid.UUID `json:"id"`
-	AssetNo     string    `json:"asset_no"`
-	Name        string    `json:"name"`
-	WarehouseID uuid.UUID `json:"warehouse_id"`
-	BaseStatus  string    `json:"base_status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          uuid.UUID      `json:"id"`
+	AssetNo     string         `json:"asset_no"`
+	TagID       sql.NullString `json:"tag_id"`
+	Name        string         `json:"name"`
+	WarehouseID uuid.UUID      `json:"warehouse_id"`
+	BaseStatus  string         `json:"base_status"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
 type User struct {

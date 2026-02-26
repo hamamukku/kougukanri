@@ -519,6 +519,8 @@ type UpdateToolInput struct {
 	Name        *string
 	WarehouseID *uuid.UUID
 	BaseStatus  *string
+	TagID       *string
+	TagIDSet    bool
 }
 
 func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid.UUID, in UpdateToolInput) (db.Tool, error) {
@@ -544,6 +546,7 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 	name := current.Name
 	warehouseID := current.WarehouseID
 	baseStatus := current.BaseStatus
+	tagID := current.TagID
 	changedFields := make(map[string]any)
 
 	if in.Name != nil {
@@ -575,6 +578,27 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 			changedFields["baseStatus"] = v
 		}
 	}
+	if in.TagIDSet {
+		if in.TagID == nil {
+			tagID = sql.NullString{}
+			if current.TagID.Valid {
+				changedFields["tagId"] = nil
+			}
+		} else {
+			trimmed := strings.TrimSpace(*in.TagID)
+			if trimmed == "" {
+				tagID = sql.NullString{}
+				if current.TagID.Valid {
+					changedFields["tagId"] = nil
+				}
+			} else {
+				tagID = sql.NullString{String: trimmed, Valid: true}
+				if !current.TagID.Valid || current.TagID.String != trimmed {
+					changedFields["tagId"] = trimmed
+				}
+			}
+		}
+	}
 
 	updated, err := qtx.UpdateTool(ctx, db.UpdateToolParams{
 		ID:          toolID,
@@ -587,6 +611,18 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 			return db.Tool{}, mapped
 		}
 		return db.Tool{}, err
+	}
+	if in.TagIDSet {
+		updated, err = qtx.UpdateToolTag(ctx, db.UpdateToolTagParams{
+			ID:    toolID,
+			TagID: tagID,
+		})
+		if err != nil {
+			if mapped := mapPQError(err); mapped != nil {
+				return db.Tool{}, mapped
+			}
+			return db.Tool{}, err
+		}
 	}
 
 	if err := s.auditTx(ctx, qtx, &actorID, "update_tool", "tool", toolID, map[string]any{
@@ -603,6 +639,22 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 	}
 
 	return updated, nil
+}
+
+func (s *Service) GetToolByTag(ctx context.Context, tagID string) (db.Tool, error) {
+	tagID = strings.TrimSpace(tagID)
+	if tagID == "" {
+		return db.Tool{}, apierr.InvalidRequest("tagId is required", nil)
+	}
+
+	tool, err := s.queries.GetToolByTag(ctx, tagID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return db.Tool{}, apierr.NotFound("tool not found")
+		}
+		return db.Tool{}, err
+	}
+	return tool, nil
 }
 
 type CreateUserInput struct {
@@ -1255,6 +1307,8 @@ func mapPQError(err error) error {
 			return apierr.Conflict("WAREHOUSE_NAME_DUPLICATE", "warehouse name already exists", nil)
 		case "tools_asset_no_key":
 			return apierr.Conflict("TOOL_ASSET_NO_DUPLICATE", "assetNo already exists", nil)
+		case "idx_tools_tag_id_unique":
+			return apierr.Conflict("TOOL_TAG_DUPLICATE", "tagId already exists", nil)
 		case "users_username_key":
 			return apierr.Conflict("USERNAME_DUPLICATE", "username already exists", nil)
 		case "users_email_key":

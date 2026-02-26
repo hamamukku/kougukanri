@@ -43,23 +43,6 @@ FROM users
 WHERE role = 'admin' AND is_active = TRUE
 ORDER BY created_at;
 
--- name: CreateAuditLog :exec
-INSERT INTO audit_logs (
-    actor_id,
-    action,
-    target_type,
-    target_id,
-    payload,
-    created_at
-) VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    NOW()
-);
-
 -- name: CountUsers :one
 SELECT COUNT(*)::bigint AS count
 FROM users;

@@ -37,6 +37,7 @@ services:
       SMTP_USERNAME: ""
       SMTP_PASSWORD: ""
       SMTP_FROM: ""
+      ENABLE_SEED_ADMIN: "true"
       SEED_ADMIN_DEPARTMENT: system
       SEED_ADMIN_USERNAME: admin
       SEED_ADMIN_EMAIL: admin@example.com

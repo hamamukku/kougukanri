@@ -915,4 +915,17 @@ export const handlers = [
     resetStateToInitial();
     return HttpResponse.json({ ok: true });
   }),
+  http.post("/mock/admin/dev/reset", async () => {
+    await delay(5);
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(TOOLS_STORAGE_KEY);
+      localStorage.removeItem(WAREHOUSES_STORAGE_KEY);
+      localStorage.removeItem(BOXES_STORAGE_KEY);
+      localStorage.removeItem(BOX_ITEMS_STORAGE_KEY);
+      localStorage.removeItem(RETURN_REQUESTS_STORAGE_KEY);
+      localStorage.removeItem(USERS_STORAGE_KEY);
+    }
+    resetStateToInitial();
+    return HttpResponse.json({ ok: true });
+  }),
 ];

@@ -224,6 +224,32 @@ type ToolListResult struct {
 	Total int64
 }
 
+type AuditLogListFilter struct {
+	ActorID    *uuid.UUID
+	TargetType string
+	TargetID   *uuid.UUID
+	Action     string
+	From       *time.Time
+	To         *time.Time
+	Page       int
+	PageSize   int
+}
+
+type AuditLogListItem struct {
+	ID         uuid.UUID
+	ActorID    *uuid.UUID
+	Action     string
+	TargetType string
+	TargetID   *uuid.UUID
+	Payload    any
+	CreatedAt  string
+}
+
+type AuditLogListResult struct {
+	Items []AuditLogListItem
+	Total int64
+}
+
 func (s *Service) ListTools(ctx context.Context, currentUserID uuid.UUID, filter ToolListFilter) (ToolListResult, error) {
 	return s.listTools(ctx, currentUserID, filter)
 }
@@ -300,6 +326,102 @@ func (s *Service) listTools(ctx context.Context, currentUserID uuid.UUID, filter
 		items = append(items, item)
 	}
 	return ToolListResult{Items: items, Total: total}, nil
+}
+
+func (s *Service) ListAuditLogs(ctx context.Context, filter AuditLogListFilter) (AuditLogListResult, error) {
+	page := filter.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize <= 0 {
+		pageSize = 25
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	if filter.From != nil && filter.To != nil && filter.From.After(*filter.To) {
+		return AuditLogListResult{}, apierr.InvalidRequest("from must be before or equal to to", nil)
+	}
+
+	actorID := uuid.NullUUID{}
+	if filter.ActorID != nil && *filter.ActorID != uuid.Nil {
+		actorID = uuid.NullUUID{UUID: *filter.ActorID, Valid: true}
+	}
+	targetID := uuid.NullUUID{}
+	if filter.TargetID != nil && *filter.TargetID != uuid.Nil {
+		targetID = uuid.NullUUID{UUID: *filter.TargetID, Valid: true}
+	}
+	createdFrom := sql.NullTime{}
+	if filter.From != nil {
+		createdFrom = sql.NullTime{Time: filter.From.UTC(), Valid: true}
+	}
+	createdTo := sql.NullTime{}
+	if filter.To != nil {
+		createdTo = sql.NullTime{Time: filter.To.UTC(), Valid: true}
+	}
+
+	targetType := strings.TrimSpace(filter.TargetType)
+	action := strings.TrimSpace(filter.Action)
+
+	total, err := s.queries.CountAuditLogs(ctx, db.CountAuditLogsParams{
+		ActorID:     actorID,
+		TargetType:  targetType,
+		TargetID:    targetID,
+		Action:      action,
+		CreatedFrom: createdFrom,
+		CreatedTo:   createdTo,
+	})
+	if err != nil {
+		return AuditLogListResult{}, err
+	}
+
+	rows, err := s.queries.ListAuditLogs(ctx, db.ListAuditLogsParams{
+		ActorID:     actorID,
+		TargetType:  targetType,
+		TargetID:    targetID,
+		Action:      action,
+		CreatedFrom: createdFrom,
+		CreatedTo:   createdTo,
+		Limit:       int32(pageSize),
+		Offset:      int32((page - 1) * pageSize),
+	})
+	if err != nil {
+		return AuditLogListResult{}, err
+	}
+
+	items := make([]AuditLogListItem, 0, len(rows))
+	for _, row := range rows {
+		item := AuditLogListItem{
+			ID:         row.ID,
+			Action:     row.Action,
+			TargetType: row.TargetType,
+			CreatedAt:  row.CreatedAt.In(s.jst).Format(time.RFC3339),
+		}
+		if row.ActorID.Valid {
+			actor := row.ActorID.UUID
+			item.ActorID = &actor
+		}
+		if row.TargetID.Valid {
+			target := row.TargetID.UUID
+			item.TargetID = &target
+		}
+		if len(row.Payload) > 0 {
+			var payload any
+			if err := json.Unmarshal(row.Payload, &payload); err == nil {
+				item.Payload = payload
+			} else {
+				item.Payload = string(row.Payload)
+			}
+		}
+		items = append(items, item)
+	}
+
+	return AuditLogListResult{
+		Items: items,
+		Total: total,
+	}, nil
 }
 
 func (s *Service) ListWarehouses(ctx context.Context) ([]db.Warehouse, error) {

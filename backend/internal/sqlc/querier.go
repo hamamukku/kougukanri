@@ -13,6 +13,7 @@ import (
 
 type Querier interface {
 	ApproveLoanItemReturn(ctx context.Context, arg ApproveLoanItemReturnParams) error
+	CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) (int64, error)
 	CountToolsWithDisplay(ctx context.Context, arg CountToolsWithDisplayParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (uuid.UUID, error)
@@ -32,6 +33,7 @@ type Querier interface {
 	HasFutureReservationByOther(ctx context.Context, arg HasFutureReservationByOtherParams) (bool, error)
 	HasOverlappingLoanItem(ctx context.Context, arg HasOverlappingLoanItemParams) (bool, error)
 	ListAdminEmails(ctx context.Context) ([]string, error)
+	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	ListMyOpenLoanItems(ctx context.Context, borrowerID uuid.UUID) ([]ListMyOpenLoanItemsRow, error)
 	ListOverdueLoanItems(ctx context.Context, dollar_1 time.Time) ([]ListOverdueLoanItemsRow, error)
 	ListPendingRequestedItemsInBoxForUpdate(ctx context.Context, boxID uuid.UUID) ([]LoanItem, error)

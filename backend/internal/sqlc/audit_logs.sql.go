@@ -7,10 +7,46 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
 )
+
+const countAuditLogs = `-- name: CountAuditLogs :one
+SELECT COUNT(*)::bigint AS total
+FROM audit_logs
+WHERE
+    ($1::uuid IS NULL OR actor_id = $1::uuid)
+    AND ($2::text = '' OR target_type = $2::text)
+    AND ($3::uuid IS NULL OR target_id = $3::uuid)
+    AND ($4::text = '' OR action = $4::text)
+    AND ($5::timestamptz IS NULL OR created_at >= $5::timestamptz)
+    AND ($6::timestamptz IS NULL OR created_at <= $6::timestamptz)
+`
+
+type CountAuditLogsParams struct {
+	Column1 uuid.UUID `json:"column_1"`
+	Column2 string    `json:"column_2"`
+	Column3 uuid.UUID `json:"column_3"`
+	Column4 string    `json:"column_4"`
+	Column5 time.Time `json:"column_5"`
+	Column6 time.Time `json:"column_6"`
+}
+
+func (q *Queries) CountAuditLogs(ctx context.Context, arg CountAuditLogsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAuditLogs,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
 
 const createAuditLog = `-- name: CreateAuditLog :one
 INSERT INTO audit_logs (
@@ -48,4 +84,76 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const listAuditLogs = `-- name: ListAuditLogs :many
+SELECT
+    id,
+    actor_id,
+    action,
+    target_type,
+    target_id,
+    payload,
+    created_at
+FROM audit_logs
+WHERE
+    ($1::uuid IS NULL OR actor_id = $1::uuid)
+    AND ($2::text = '' OR target_type = $2::text)
+    AND ($3::uuid IS NULL OR target_id = $3::uuid)
+    AND ($4::text = '' OR action = $4::text)
+    AND ($5::timestamptz IS NULL OR created_at >= $5::timestamptz)
+    AND ($6::timestamptz IS NULL OR created_at <= $6::timestamptz)
+ORDER BY created_at DESC, id DESC
+LIMIT $7 OFFSET $8
+`
+
+type ListAuditLogsParams struct {
+	Column1 uuid.UUID `json:"column_1"`
+	Column2 string    `json:"column_2"`
+	Column3 uuid.UUID `json:"column_3"`
+	Column4 string    `json:"column_4"`
+	Column5 time.Time `json:"column_5"`
+	Column6 time.Time `json:"column_6"`
+	Limit   int32     `json:"limit"`
+	Offset  int32     `json:"offset"`
+}
+
+func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditLogs,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditLog{}
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActorID,
+			&i.Action,
+			&i.TargetType,
+			&i.TargetID,
+			&i.Payload,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

@@ -129,10 +129,15 @@ func (h *Handler) createWarehouse(c *gin.Context) {
 
 func (h *Handler) listTools(c *gin.Context) {
 	user, _ := CurrentUser(c)
+	warehouseID, err := parseOptionalWarehouseID(c.Query("warehouseId"))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("warehouseId is invalid", map[string]any{"warehouseId": c.Query("warehouseId")}))
+		return
+	}
 	filter := app.ToolListFilter{
 		Q:           c.Query("q"),
 		Mode:        c.DefaultQuery("mode", "partial"),
-		WarehouseID: c.Query("warehouseId"),
+		WarehouseID: warehouseID,
 		Status:      c.Query("status"),
 		Page:        parsePositiveInt(c.Query("page"), 1),
 		PageSize:    parsePositiveInt(c.DefaultQuery("pageSize", "25"), 25),
@@ -172,10 +177,15 @@ func (h *Handler) listTools(c *gin.Context) {
 
 func (h *Handler) listAdminTools(c *gin.Context) {
 	user, _ := CurrentUser(c)
+	warehouseID, err := parseOptionalWarehouseID(c.Query("warehouseId"))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("warehouseId is invalid", map[string]any{"warehouseId": c.Query("warehouseId")}))
+		return
+	}
 	filter := app.ToolListFilter{
 		Q:           c.Query("q"),
 		Mode:        c.DefaultQuery("mode", "partial"),
-		WarehouseID: c.Query("warehouseId"),
+		WarehouseID: warehouseID,
 		Status:      c.Query("status"),
 		Page:        parsePositiveInt(c.Query("page"), 1),
 		PageSize:    parsePositiveInt(c.DefaultQuery("pageSize", "25"), 25),
@@ -547,6 +557,18 @@ func parsePositiveInt(v string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func parseOptionalWarehouseID(raw string) (string, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", nil
+	}
+	id, err := uuid.Parse(v)
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
 }
 
 func nullableString(v string) any {

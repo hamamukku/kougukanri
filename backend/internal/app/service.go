@@ -749,7 +749,7 @@ func (s *Service) RequestReturn(ctx context.Context, userID uuid.UUID, loanItemI
 	item, err := qtx.GetLoanItemForUpdate(ctx, loanItemID)
 	if err != nil {
 		if stdErrors.Is(err, sql.ErrNoRows) {
-			return apierr.InvalidRequest("loan item not found", nil)
+			return apierr.NotFound("loan item not found")
 		}
 		return err
 	}

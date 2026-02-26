@@ -154,13 +154,11 @@ curl -s -H "Authorization: Bearer <adminToken>" \
   "http://localhost:3000/api/tools?page=1&pageSize=25"
 ```
 
-Use an existing route for `NOT_FOUND` validation:
+Use a user token from `POST /api/auth/login` for `NOT_FOUND` validation:
 ```bash
-curl -i -H "Authorization: Bearer <adminToken>" \
-  -H "Content-Type: application/json" \
-  -X PATCH \
-  -d '{"name":"dummy"}' \
-  "http://localhost:3000/api/admin/tools/11111111-1111-1111-1111-111111111111"
+curl -i -H "Authorization: Bearer <userToken>" \
+  -X POST \
+  "http://localhost:3000/api/my/loans/00000000-0000-0000-0000-000000000000/return-request"
 ```
 
 ## Cron overdue check

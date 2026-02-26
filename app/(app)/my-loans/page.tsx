@@ -1,10 +1,11 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Button from "../../../src/components/ui/Button";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 import { statusLabel } from "../../../src/utils/format";
-import { HttpError, apiFetchJson } from "../../../src/utils/http";
+import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../src/utils/http";
 
 type MyBox = {
   box: {
@@ -40,21 +41,20 @@ export default function MyLoansPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [requesting, setRequesting] = useState<Set<string>>(new Set());
+  const router = useRouter();
 
   const handleApiError = (error: unknown, options: { onForbiddenRedirect?: boolean } = {}): string | null => {
-    if (!(error instanceof HttpError)) return "通信に失敗しました";
-
-    if (error.status === 401) {
-      window.location.href = "/login";
+    if (isHttpError(error) && error.status === 401) {
+      router.push("/login");
       return null;
     }
 
-    if (error.status === 403 && options.onForbiddenRedirect) {
-      window.location.href = "/tools";
+    if (isHttpError(error) && error.status === 403 && options.onForbiddenRedirect) {
+      router.push("/tools");
       return null;
     }
 
-    return error.message || "通信に失敗しました";
+    return getHttpErrorMessage(error);
   };
 
   const loadData = useCallback(async () => {

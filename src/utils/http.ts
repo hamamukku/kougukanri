@@ -1,4 +1,4 @@
-export class HttpError extends Error {
+﻿export class HttpError extends Error {
   status: number;
   body: unknown;
 
@@ -8,6 +8,17 @@ export class HttpError extends Error {
     this.status = status;
     this.body = body;
   }
+}
+
+export function isHttpError(error: unknown): error is HttpError {
+  return error instanceof HttpError;
+}
+
+export function getHttpErrorMessage(error: unknown): string {
+  if (!isHttpError(error) || typeof error.message !== "string" || error.message.trim().length === 0) {
+    return "通信に失敗しました";
+  }
+  return error.message;
 }
 
 function parseBody(response: Response): Promise<unknown> {
@@ -44,4 +55,3 @@ export async function apiFetchJson<T>(url: string, options: RequestInit = {}): P
 
   return body as T;
 }
-

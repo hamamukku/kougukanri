@@ -6,7 +6,7 @@ import Button from "../../../src/components/ui/Button";
 import Input from "../../../src/components/ui/Input";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 import { statusLabel } from "../../../src/utils/format";
-import { HttpError, apiFetchJson } from "../../../src/utils/http";
+import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../src/utils/http";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
 
 type ToolStatus = "available" | "loaned" | "repairing" | "lost";
@@ -45,19 +45,17 @@ export default function LoanBoxPage() {
   const { selectedToolIds, clearSelection } = useLoanBox();
 
   const handleApiError = (error: unknown): string | null => {
-    if (!(error instanceof HttpError)) return "通信に失敗しました";
-
-    if (error.status === 401) {
-      window.location.href = "/login";
+    if (isHttpError(error) && error.status === 401) {
+      router.push("/login");
       return null;
     }
 
-    if (error.status === 403) {
-      window.location.href = "/tools";
+    if (isHttpError(error) && error.status === 403) {
+      router.push("/tools");
       return null;
     }
 
-    return error.message || "通信に失敗しました";
+    return getHttpErrorMessage(error);
   };
 
   const loadData = useCallback(async () => {

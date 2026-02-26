@@ -15,7 +15,7 @@ type LoanBoxContextValue = {
 const LoanBoxContext = createContext<LoanBoxContextValue | null>(null);
 
 function readSelection(): Set<string> {
-  if (typeof sessionStorage === "undefined") return new Set();
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return new Set();
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return new Set();
@@ -41,18 +41,11 @@ function writeSelection(ids: Set<string>) {
 }
 
 export function LoanBoxProvider({ children }: { children: React.ReactNode }) {
-  const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(new Set());
-  const [hydrated, setHydrated] = useState(false);
+  const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(() => readSelection());
 
   useEffect(() => {
-    setSelectedToolIds(readSelection());
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
     writeSelection(selectedToolIds);
-  }, [selectedToolIds, hydrated]);
+  }, [selectedToolIds]);
 
   const value = useMemo<LoanBoxContextValue>(() => {
     return {

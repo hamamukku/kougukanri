@@ -274,12 +274,12 @@ function normalizeBoxItems(items: unknown[] | null): BoxItem[] {
 function normalizeReturnRequests(items: unknown[] | null): ReturnRequest[] {
   if (!Array.isArray(items) || items.length === 0) return [];
   return items
-    .map((item) => {
+    .map((item): ReturnRequest | null => {
       const obj = item as Record<string, unknown>;
       const boxId = typeof obj.boxId === "string" && obj.boxId.trim() ? obj.boxId : "";
       const toolId = typeof obj.toolId === "string" && obj.toolId.trim() ? obj.toolId : "";
       if (!boxId || !toolId) return null;
-      const status =
+      const status: ReturnRequest["status"] =
         obj.status === "requested" || obj.status === "approved" || obj.status === "none"
           ? obj.status
           : "none";
@@ -368,11 +368,11 @@ function buildMyBoxPayload(box: Box): MyBoxPayload {
         toolName: string;
         assetNo: string;
         warehouseId: string;
-        dueOverride?: string;
+        dueOverride: string | undefined;
         dueEffective: string;
         status: ToolStatus;
-        returnStatus?: ReturnRequestStatus;
-        requestedAt?: string;
+        returnStatus: ReturnRequestStatus | undefined;
+        requestedAt: string | undefined;
       } => x !== null,
     );
   const toolsById: Record<
@@ -762,7 +762,8 @@ export const handlers = [
     const obj = (body as Record<string, unknown>) || {};
     const found = users.findIndex((user) => user.id === id);
     const nextUsername = typeof obj.username === "string" ? obj.username.trim() : undefined;
-    const nextRole = obj.role === "admin" || obj.role === "user" ? obj.role : undefined;
+    const nextRole: "admin" | "user" | undefined =
+      obj.role === "admin" || obj.role === "user" ? obj.role : undefined;
     if (found === -1) {
       return HttpResponse.json({ ok: false, message: "user not found" }, { status: 404 });
     }

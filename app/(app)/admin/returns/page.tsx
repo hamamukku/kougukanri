@@ -1,10 +1,11 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Button from "../../../../src/components/ui/Button";
 import { formatDateJa } from "../../../../src/utils/format";
 import { Table, Td, Th } from "../../../../src/components/ui/Table";
-import { HttpError, apiFetchJson } from "../../../../src/utils/http";
+import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 
 type AdminReturnGroup = {
   boxId: string;
@@ -35,20 +36,20 @@ export default function AdminReturnsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
   const [selectedToolIdsByBox, setSelectedToolIdsByBox] = useState<Record<string, Set<string>>>({});
+  const router = useRouter();
 
   const handleApiError = (error: unknown): string | null => {
-    if (!(error instanceof HttpError)) return "通信に失敗しました";
-
-    if (error.status === 401) {
-      window.location.href = "/login";
+    if (isHttpError(error) && error.status === 401) {
+      router.push("/login");
       return null;
     }
 
-    if (error.status === 403) {
-      return error.message || "権限がありません";
+    if (isHttpError(error) && error.status === 403) {
+      router.push("/tools");
+      return null;
     }
 
-    return error.message || "通信に失敗しました";
+    return getHttpErrorMessage(error);
   };
 
   const loadData = useCallback(async () => {

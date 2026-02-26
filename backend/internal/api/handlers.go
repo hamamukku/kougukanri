@@ -46,6 +46,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	admin.Use(AuthMiddleware(h.jwtManager, h.svc), RequireRole(app.RoleAdmin))
 	admin.POST("/warehouses", h.createWarehouse)
 	admin.GET("/tools", h.listAdminTools)
+	admin.GET("/audit-logs", h.listAuditLogs)
 	admin.POST("/tools", h.createTool)
 	admin.PATCH("/tools/:toolId", h.patchTool)
 	admin.GET("/returns/requests", h.listReturnRequests)
@@ -215,6 +216,69 @@ func (h *Handler) listAdminTools(c *gin.Context) {
 			"isReservedByMe":              t.IsReservedByMe,
 		})
 	}
+	c.JSON(http.StatusOK, gin.H{
+		"items":    resp,
+		"page":     filter.Page,
+		"pageSize": filter.PageSize,
+		"total":    result.Total,
+	})
+}
+
+func (h *Handler) listAuditLogs(c *gin.Context) {
+	actorID, err := parseOptionalUUID(c.Query("actorId"))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("actorId is invalid", map[string]any{"actorId": c.Query("actorId")}))
+		return
+	}
+	targetID, err := parseOptionalUUID(c.Query("targetId"))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("targetId is invalid", map[string]any{"targetId": c.Query("targetId")}))
+		return
+	}
+	from, err := parseOptionalTimestamp(c.Query("from"), false)
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("from is invalid", map[string]any{"from": c.Query("from")}))
+		return
+	}
+	to, err := parseOptionalTimestamp(c.Query("to"), true)
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("to is invalid", map[string]any{"to": c.Query("to")}))
+		return
+	}
+
+	filter := app.AuditLogListFilter{
+		ActorID:    actorID,
+		TargetType: strings.TrimSpace(c.Query("targetType")),
+		TargetID:   targetID,
+		Action:     strings.TrimSpace(c.Query("action")),
+		From:       from,
+		To:         to,
+		Page:       parsePositiveInt(c.Query("page"), 1),
+		PageSize:   parsePositiveInt(c.DefaultQuery("pageSize", "25"), 25),
+	}
+	if filter.PageSize > 100 {
+		filter.PageSize = 100
+	}
+
+	result, err := h.svc.ListAuditLogs(c.Request.Context(), filter)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	resp := make([]gin.H, 0, len(result.Items))
+	for _, item := range result.Items {
+		resp = append(resp, gin.H{
+			"id":         item.ID,
+			"actorId":    item.ActorID,
+			"action":     item.Action,
+			"targetType": item.TargetType,
+			"targetId":   item.TargetID,
+			"payload":    item.Payload,
+			"createdAt":  item.CreatedAt,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"items":    resp,
 		"page":     filter.Page,
@@ -569,6 +633,36 @@ func parseOptionalWarehouseID(raw string) (string, error) {
 		return "", err
 	}
 	return id.String(), nil
+}
+
+func parseOptionalUUID(raw string) (*uuid.UUID, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return nil, nil
+	}
+	id, err := uuid.Parse(v)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
+func parseOptionalTimestamp(raw string, endOfDay bool) (*time.Time, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return nil, nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+		return &parsed, nil
+	}
+	parsedDate, err := time.Parse("2006-01-02", v)
+	if err != nil {
+		return nil, err
+	}
+	if endOfDay {
+		parsedDate = parsedDate.Add(24*time.Hour - time.Nanosecond)
+	}
+	return &parsedDate, nil
 }
 
 func nullableString(v string) any {

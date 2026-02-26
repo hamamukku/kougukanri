@@ -79,6 +79,7 @@ migrate -path backend/db/migrations -database "postgres://postgres:postgres@loca
 - `POST /api/admin/warehouses`
 - `GET /api/tools`
 - `GET /api/admin/tools`
+- `GET /api/admin/audit-logs`
 - `POST /api/admin/tools`
 - `PATCH /api/admin/tools/:toolId`
 - `POST /api/loan-boxes`
@@ -160,6 +161,13 @@ curl -i -H "Authorization: Bearer <userToken>" \
   -X POST \
   "http://localhost:3000/api/my/loans/00000000-0000-0000-0000-000000000000/return-request"
 ```
+
+Audit log list (admin only, newest first, supports `actorId,targetType,targetId,action,from,to,page,pageSize`):
+```bash
+curl -s -H "Authorization: Bearer <adminToken>" \
+  "http://localhost:3000/api/admin/audit-logs?page=1&pageSize=25"
+```
+Response includes `items,page,pageSize,total`.
 
 ## Cron overdue check
 Cron runs every day at `06:00 JST`.

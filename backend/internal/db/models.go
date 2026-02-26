@@ -101,32 +101,42 @@ type MyOpenLoanItem struct {
 }
 
 type ReturnRequestRow struct {
-	BoxID           uuid.UUID
-	BoxDisplayName  string
-	BoxStartDate    time.Time
-	BoxDueDate      time.Time
-	BorrowerUsername string
-	LoanItemID      uuid.UUID
-	ToolID          uuid.UUID
-	AssetNo         string
-	ToolName        string
-	StartDate       time.Time
-	DueDate         time.Time
+	BoxID             uuid.UUID
+	BoxDisplayName    string
+	BoxStartDate      time.Time
+	BoxDueDate        time.Time
+	BorrowerUsername  string
+	LoanItemID        uuid.UUID
+	ToolID            uuid.UUID
+	AssetNo           string
+	ToolName          string
+	StartDate         time.Time
+	DueDate           time.Time
 	ReturnRequestedAt sql.NullTime
 }
 
 type OverdueLoanItem struct {
-	LoanItemID      uuid.UUID
-	BoxID           uuid.UUID
-	BoxDisplayName  string
-	ToolID          uuid.UUID
-	AssetNo         string
-	ToolName        string
-	StartDate       time.Time
-	DueDate         time.Time
-	BorrowerID      uuid.UUID
+	LoanItemID       uuid.UUID
+	BoxID            uuid.UUID
+	BoxDisplayName   string
+	ToolID           uuid.UUID
+	AssetNo          string
+	ToolName         string
+	StartDate        time.Time
+	DueDate          time.Time
+	BorrowerID       uuid.UUID
 	BorrowerUsername string
-	BorrowerEmail   string
+	BorrowerEmail    string
+}
+
+type AuditLog struct {
+	ID         uuid.UUID
+	ActorID    uuid.NullUUID
+	Action     string
+	TargetType string
+	TargetID   uuid.NullUUID
+	Payload    []byte
+	CreatedAt  time.Time
 }
 
 type ExistsResult struct {

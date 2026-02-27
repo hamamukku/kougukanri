@@ -50,7 +50,17 @@ type ReturnRequest = {
 type AdminUser = {
   id: string;
   username: string;
+  email: string;
   role: "user" | "admin";
+};
+
+type PendingUser = {
+  id: string;
+  username: string;
+  email: string;
+  password: string;
+  status: "pending";
+  requestedAt: string;
 };
 
 type AdminReturnGroup = {
@@ -101,13 +111,16 @@ const BOXES_STORAGE_KEY = "msw_boxes_state_v1";
 const BOX_ITEMS_STORAGE_KEY = "msw_box_items_state_v1";
 const RETURN_REQUESTS_STORAGE_KEY = "msw_return_requests_state_v1";
 const USERS_STORAGE_KEY = "msw_admin_users_state_v1";
+const USER_REQUESTS_STORAGE_KEY = "msw_user_requests_state_v1";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_USERNAME = "ユーザー";
 const ADMIN_USERS_FALLBACK: AdminUser[] = [
-  { id: "u1", username: "管理者", role: "admin" },
-  { id: "u2", username: DEFAULT_USERNAME, role: "user" },
+  { id: "u1", username: "管理者", email: "admin@example.local", role: "admin" },
+  { id: "u2", username: DEFAULT_USERNAME, email: "user@example.local", role: "user" },
 ];
+
+const PENDING_USERS_FALLBACK: PendingUser[] = [];
 
 function loadArray<T>(key: string): T[] | null {
   try {
@@ -230,11 +243,33 @@ function normalizeUsers(items: unknown[] | null): AdminUser[] {
         id: typeof obj.id === "string" && obj.id.trim() ? obj.id : `u-${index + 1}`,
         username:
           typeof obj.username === "string" && obj.username.trim() ? obj.username : `ユーザー${index + 1}`,
+        email: typeof obj.email === "string" && obj.email.trim() ? obj.email.trim() : `u${index + 1}@example.local`,
         role,
       };
     })
     .filter((x) => x.username.trim().length > 0);
   return list.length ? list : ADMIN_USERS_FALLBACK;
+}
+
+function normalizePendingUsers(items: unknown[] | null): PendingUser[] {
+  if (!Array.isArray(items) || items.length === 0) return [...PENDING_USERS_FALLBACK];
+  const list = items
+    .map((item, index) => {
+      const obj = item as Record<string, unknown>;
+      return {
+        id: typeof obj.id === "string" && obj.id.trim() ? obj.id : `pr-${Date.now()}-${index}`,
+        username:
+          typeof obj.username === "string" && obj.username.trim() ? obj.username : `pending-user-${index + 1}`,
+        email:
+          typeof obj.email === "string" && obj.email.trim() ? obj.email : `pending-${index + 1}@example.local`,
+        password: typeof obj.password === "string" ? obj.password : "",
+        status: "pending",
+        requestedAt:
+          typeof obj.requestedAt === "string" && obj.requestedAt.trim() ? obj.requestedAt : new Date().toISOString(),
+      };
+    })
+    .filter((x) => x.username.trim().length > 0 && x.email.trim().length > 0);
+  return list.length ? list : [...PENDING_USERS_FALLBACK];
 }
 
 function normalizeBoxes(items: unknown[] | null): Box[] {
@@ -301,6 +336,7 @@ function saveState() {
   saveArray(BOX_ITEMS_STORAGE_KEY, boxItems);
   saveArray(RETURN_REQUESTS_STORAGE_KEY, returnRequests);
   saveArray(USERS_STORAGE_KEY, users);
+  saveArray(USER_REQUESTS_STORAGE_KEY, pendingUsers);
 }
 
 function resetStateToInitial() {
@@ -310,6 +346,7 @@ function resetStateToInitial() {
   boxItems = [];
   returnRequests = [];
   users = [...ADMIN_USERS_FALLBACK];
+  pendingUsers = [...PENDING_USERS_FALLBACK];
   saveState();
 }
 
@@ -401,6 +438,7 @@ let boxes = normalizeBoxes(loadArray<Box>(BOXES_STORAGE_KEY));
 let boxItems = normalizeBoxItems(loadArray<BoxItem>(BOX_ITEMS_STORAGE_KEY));
 let returnRequests = normalizeReturnRequests(loadArray<ReturnRequest>(RETURN_REQUESTS_STORAGE_KEY));
 let users = normalizeUsers(loadArray<AdminUser>(USERS_STORAGE_KEY));
+let pendingUsers = normalizePendingUsers(loadArray<PendingUser>(USER_REQUESTS_STORAGE_KEY));
 
 if (warehouses.length === 0) {
   warehouses = createInitialWarehouses();
@@ -676,14 +714,19 @@ export const handlers = [
     } catch {}
     const obj = (body as Record<string, unknown>) || {};
     const username = typeof obj.username === "string" ? obj.username.trim() : "";
+    const email = typeof obj.email === "string" ? obj.email.trim() : "";
     const role = obj.role === "admin" ? "admin" : "user";
     if (!username) {
       return HttpResponse.json({ ok: false, message: "username required" }, { status: 400 });
+    }
+    if (!email) {
+      return HttpResponse.json({ ok: false, message: "email required" }, { status: 422 });
     }
 
     const user: AdminUser = {
       id: `u-${Date.now()}`,
       username,
+      email,
       role,
     };
     users = [user, ...users];
@@ -752,6 +795,66 @@ export const handlers = [
     saveArray(WAREHOUSES_STORAGE_KEY, warehouses);
     return HttpResponse.json({ ok: true });
   }),
+  http.post("/api/public/signup/request", async ({ request }) => {
+    await delay(5);
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {}
+
+    const obj = (body as Record<string, unknown>) || {};
+    const username = typeof obj.username === "string" ? obj.username.trim() : "";
+    const email = typeof obj.email === "string" ? obj.email.trim() : "";
+    const password = typeof obj.password === "string" ? obj.password.trim() : "";
+
+    if (!username) {
+      return HttpResponse.json({ ok: false, message: "username required" }, { status: 422 });
+    }
+    if (!email) {
+      return HttpResponse.json({ ok: false, message: "email required" }, { status: 422 });
+    }
+    if (!password) {
+      return HttpResponse.json({ ok: false, message: "password required" }, { status: 422 });
+    }
+
+    const requestUser: PendingUser = {
+      id: `pr-${Date.now()}`,
+      username,
+      email,
+      password,
+      status: "pending",
+      requestedAt: new Date().toISOString(),
+    };
+    pendingUsers = [requestUser, ...pendingUsers];
+    saveArray(USER_REQUESTS_STORAGE_KEY, pendingUsers);
+    return HttpResponse.json({ ok: true, request: requestUser });
+  }),
+  http.get("/api/admin/user-requests", async () => {
+    await delay(5);
+    return HttpResponse.json(pendingUsers);
+  }),
+  http.post("/api/admin/user-requests/:id/approve", async ({ params }) => {
+    await delay(5);
+    const id = typeof params.id === "string" ? params.id : "";
+    const found = pendingUsers.findIndex((requestUser) => requestUser.id === id);
+    if (found === -1) {
+      return HttpResponse.json({ ok: false, message: "request not found" }, { status: 404 });
+    }
+
+    const requestUser = pendingUsers[found];
+    pendingUsers = pendingUsers.filter((requestUser) => requestUser.id !== id);
+    const user: AdminUser = {
+      id: `u-${Date.now()}`,
+      username: requestUser.username,
+      email: requestUser.email,
+      role: "user",
+    };
+    users = [user, ...users];
+
+    saveArray(USERS_STORAGE_KEY, users);
+    saveArray(USER_REQUESTS_STORAGE_KEY, pendingUsers);
+    return HttpResponse.json({ ok: true, user });
+  }),
   http.patch("/api/admin/users/:id", async ({ params, request }) => {
     await delay(5);
     const id = typeof params.id === "string" ? params.id : "";
@@ -762,16 +865,20 @@ export const handlers = [
     const obj = (body as Record<string, unknown>) || {};
     const found = users.findIndex((user) => user.id === id);
     const nextUsername = typeof obj.username === "string" ? obj.username.trim() : undefined;
+    const nextEmail = typeof obj.email === "string" ? obj.email.trim() : undefined;
     const nextRole: "admin" | "user" | undefined =
       obj.role === "admin" || obj.role === "user" ? obj.role : undefined;
     if (found === -1) {
       return HttpResponse.json({ ok: false, message: "user not found" }, { status: 404 });
     }
-    if (nextUsername === undefined && nextRole === undefined) {
-      return HttpResponse.json({ ok: false, message: "username or role required" }, { status: 422 });
+    if (nextUsername === undefined && nextEmail === undefined && nextRole === undefined) {
+      return HttpResponse.json({ ok: false, message: "username or email or role required" }, { status: 422 });
     }
     if (nextUsername !== undefined && !nextUsername) {
       return HttpResponse.json({ ok: false, message: "username required" }, { status: 422 });
+    }
+    if (nextEmail !== undefined && !nextEmail) {
+      return HttpResponse.json({ ok: false, message: "email required" }, { status: 422 });
     }
 
     const nextUsers = users.map((user, index) => {
@@ -779,6 +886,7 @@ export const handlers = [
       return {
         ...user,
         ...(nextUsername !== undefined ? { username: nextUsername } : {}),
+        ...(nextEmail !== undefined ? { email: nextEmail } : {}),
         ...(nextRole !== undefined ? { role: nextRole } : {}),
       };
     });
@@ -911,6 +1019,7 @@ export const handlers = [
       localStorage.removeItem(BOX_ITEMS_STORAGE_KEY);
       localStorage.removeItem(RETURN_REQUESTS_STORAGE_KEY);
       localStorage.removeItem(USERS_STORAGE_KEY);
+      localStorage.removeItem(USER_REQUESTS_STORAGE_KEY);
     }
     resetStateToInitial();
     return HttpResponse.json({ ok: true });
@@ -924,6 +1033,7 @@ export const handlers = [
       localStorage.removeItem(BOX_ITEMS_STORAGE_KEY);
       localStorage.removeItem(RETURN_REQUESTS_STORAGE_KEY);
       localStorage.removeItem(USERS_STORAGE_KEY);
+      localStorage.removeItem(USER_REQUESTS_STORAGE_KEY);
     }
     resetStateToInitial();
     return HttpResponse.json({ ok: true });

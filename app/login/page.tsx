@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -8,10 +9,7 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = useMemo(
-    () => searchParams.get("next") || "/tools",
-    [searchParams]
-  );
+  const nextPath = useMemo(() => searchParams.get("next") || "/tools", [searchParams]);
 
   const setCookie = (name: string, value: string) => {
     document.cookie = `${name}=${value}; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}; SameSite=Lax`;
@@ -26,15 +24,36 @@ export default function LoginPage() {
   };
 
   return (
-    <main style={{ padding: 24 }}>
-      <h1>ログイン</h1>
-      <div style={{ display: "grid", gap: 8 }}>
-        <button type="button" onClick={() => onLogin("user", "一般ユーザー")}>
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 32,
+      }}
+    >
+      <div style={{ width: 320, maxWidth: "90vw", display: "grid", gap: 12, textAlign: "center" }}>
+        <h1>ログイン</h1>
+        <button
+          type="button"
+          onClick={() => onLogin("user", "user")}
+          style={{ width: "100%", height: 40 }}
+        >
           一般ユーザーでログイン
         </button>
-        <button type="button" onClick={() => onLogin("admin", "管理者")}>
+        <button
+          type="button"
+          onClick={() => onLogin("admin", "admin")}
+          style={{ width: "100%", height: 40 }}
+        >
           管理者でログイン
         </button>
+        <Link href="/signup-request">
+          <button type="button" style={{ width: "100%", height: 40 }}>
+            アカウント作成申請
+          </button>
+        </Link>
       </div>
     </main>
   );

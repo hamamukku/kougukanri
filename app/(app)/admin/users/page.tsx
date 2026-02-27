@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
 import Toast from "../../../../src/components/ui/Toast";
+import { useConfirm } from "../../../../src/components/ui/ConfirmProvider";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 
 type AdminUser = {
@@ -36,6 +37,7 @@ export default function AdminUsersPage() {
   const [editingRole, setEditingRole] = useState<"user" | "admin">("user");
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const { confirm } = useConfirm();
 
   const handleApiError = (error: unknown): string | null => {
     if (isHttpError(error) && error.status === 401) {
@@ -93,7 +95,7 @@ export default function AdminUsersPage() {
   };
 
   const onDelete = async (id: string) => {
-    if (!window.confirm("このユーザーを削除しますか？")) return;
+    if (!(await confirm({ message: "このユーザーを削除しますか？" }))) return;
     if (submitting.has(id)) return;
     setSubmitting((prev) => new Set(prev).add(id));
     try {
@@ -163,7 +165,7 @@ export default function AdminUsersPage() {
 
   const onApproveRequest = async (id: string) => {
     if (submitting.has(`approve:${id}`)) return;
-    if (!window.confirm("この申請を承認しますか？")) return;
+    if (!(await confirm({ message: "この申請を承認しますか？" }))) return;
     setSubmitting((prev) => new Set(prev).add(`approve:${id}`));
     try {
       await apiFetchJson<{ ok: true } & Record<string, unknown>>(`/api/admin/user-requests/${id}/approve`, {
@@ -185,7 +187,7 @@ export default function AdminUsersPage() {
 
   const onResetData = async () => {
     if (submitting.has("reset")) return;
-    if (!window.confirm("MSWデータを初期化しますか？")) return;
+    if (!(await confirm({ message: "MSWデータを初期化しますか？" }))) return;
     setSubmitting((prev) => new Set(prev).add("reset"));
     try {
       await apiFetchJson<{ ok: true } & Record<string, unknown>>("/api/admin/dev/reset", {

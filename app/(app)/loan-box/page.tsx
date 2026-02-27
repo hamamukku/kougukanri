@@ -7,6 +7,7 @@ import Input from "../../../src/components/ui/Input";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
 import { statusLabel } from "../../../src/utils/format";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../src/utils/http";
+import { useConfirm } from "../../../src/components/ui/ConfirmProvider";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
 
 type ToolStatus = "available" | "loaned" | "repairing" | "lost";
@@ -42,6 +43,7 @@ export default function LoanBoxPage() {
   const [dueOverrides, setDueOverrides] = useState<DueOverrides>({});
 
   const router = useRouter();
+  const { confirm } = useConfirm();
   const { selectedToolIds, clearSelection } = useLoanBox();
 
   const handleApiError = (error: unknown): string | null => {
@@ -117,7 +119,7 @@ export default function LoanBoxPage() {
 
   const onCheckout = async () => {
     if (checkoutDisabled) return;
-    if (!window.confirm("貸出内容を確定しますか？")) return;
+    if (!(await confirm({ message: "貸出内容を確定しますか？" }))) return;
 
     setSubmitting(true);
     setErr(null);

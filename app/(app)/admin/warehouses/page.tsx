@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
+import { useConfirm } from "../../../../src/components/ui/ConfirmProvider";
 import { HttpError, apiFetchJson } from "../../../../src/utils/http";
 
 type Warehouse = {
@@ -18,6 +19,7 @@ export default function AdminWarehousesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
+  const { confirm } = useConfirm();
 
   const handleApiError = (error: unknown): string | null => {
     if (!(error instanceof HttpError)) return "通信に失敗しました";
@@ -111,7 +113,7 @@ export default function AdminWarehousesPage() {
   };
 
   const onDelete = async (id: string) => {
-    if (!window.confirm("この倉庫を削除しますか？")) return;
+    if (!(await confirm({ message: "この倉庫を削除しますか？" }))) return;
     if (submitting.has(id)) return;
     setSubmitting((prev) => new Set(prev).add(id));
     try {

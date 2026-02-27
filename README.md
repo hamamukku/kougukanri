@@ -32,6 +32,8 @@ Endpoints:
 
 The API applies migrations automatically at startup.
 
+If `5432` is already used on the host, either stop the existing DB process or change the compose mapping from `"5432:5432"` to `"5433:5432"` and reconnect with port `5433`.
+
 ## Seed admin
 Seed admin creation runs only when `ENABLE_SEED_ADMIN=true`.
 
@@ -55,8 +57,17 @@ Main variables:
 - `CRON_ENABLED`
 - `ENABLE_SEED_ADMIN`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`
-- `NOTIFY_WEBHOOK_URL` (unset means noop notifier)
-- `NOTIFY_ENABLED` (optional; defaults to enabled when webhook URL is set)
+- `NOTIFY_WEBHOOK_URL`
+  - empty: notifier is always noop
+  - set: notifier is enabled by default
+- `NOTIFY_ENABLED` (optional override)
+  - `false`: force notifier noop even when webhook URL is set
+  - unset: keep default behavior from `NOTIFY_WEBHOOK_URL`
+
+Startup log includes notifier mode for diagnosis:
+- `notify_mode=(noop|webhook)`
+- `notify_enabled=(true|false)`
+- `webhook_configured=(true|false)` (URL value itself is not logged)
 
 ## sqlc
 ```bash
@@ -171,6 +182,12 @@ curl -s -H "Authorization: Bearer <adminToken>" \
   "http://localhost:3000/api/admin/audit-logs?page=1&pageSize=25"
 ```
 Response includes `items,page,pageSize,total`.
+
+`from` / `to` input rules:
+- RFC3339 values are used as-is.
+- `YYYY-MM-DD` is interpreted in JST (`Asia/Tokyo`).
+  - `from=YYYY-MM-DD` -> JST `00:00:00.000000000`
+  - `to=YYYY-MM-DD` -> JST `23:59:59.999999999`
 
 BLT tag linkage:
 - `tools.tag_id` is nullable `TEXT` with unique constraint (`NULL` allowed multiple times).

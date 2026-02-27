@@ -34,7 +34,16 @@ type Config struct {
 
 func Load() (Config, error) {
 	notifyWebhookURL := strings.TrimSpace(os.Getenv("NOTIFY_WEBHOOK_URL"))
-	defaultNotifyEnabled := notifyWebhookURL != ""
+	notifyEnabled := false
+	if notifyWebhookURL != "" {
+		notifyEnabled = true
+		if raw, ok := os.LookupEnv("NOTIFY_ENABLED"); ok {
+			parsed, err := strconv.ParseBool(raw)
+			if err == nil {
+				notifyEnabled = parsed
+			}
+		}
+	}
 
 	cfg := Config{
 		Port:                getEnv("PORT", "3000"),
@@ -49,15 +58,12 @@ func Load() (Config, error) {
 		SMTPFrom:            os.Getenv("SMTP_FROM"),
 		CronEnabled:         getEnvBool("CRON_ENABLED", true),
 		NotifyWebhookURL:    notifyWebhookURL,
-		NotifyEnabled:       getEnvBool("NOTIFY_ENABLED", defaultNotifyEnabled),
+		NotifyEnabled:       notifyEnabled,
 		EnableSeedAdmin:     getEnvBool("ENABLE_SEED_ADMIN", false),
 		SeedAdminUsername:   os.Getenv("SEED_ADMIN_USERNAME"),
 		SeedAdminEmail:      os.Getenv("SEED_ADMIN_EMAIL"),
 		SeedAdminPassword:   os.Getenv("SEED_ADMIN_PASSWORD"),
 		SeedAdminDepartment: getEnv("SEED_ADMIN_DEPARTMENT", "system"),
-	}
-	if cfg.NotifyWebhookURL == "" {
-		cfg.NotifyEnabled = false
 	}
 
 	if cfg.DBURL == "" {

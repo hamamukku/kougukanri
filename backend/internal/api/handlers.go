@@ -706,7 +706,11 @@ func parseOptionalTimestamp(raw string, endOfDay bool) (*time.Time, error) {
 	if parsed, err := time.Parse(time.RFC3339, v); err == nil {
 		return &parsed, nil
 	}
-	parsedDate, err := time.Parse("2006-01-02", v)
+	jst, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		return nil, err
+	}
+	parsedDate, err := time.ParseInLocation("2006-01-02", v, jst)
 	if err != nil {
 		return nil, err
 	}

@@ -48,6 +48,11 @@ func main() {
 		mailer = mail.NewNoopMailer()
 	}
 	notifier := notify.NewNotifier(cfg)
+	notifyMode := "noop"
+	if cfg.NotifyEnabled && cfg.NotifyWebhookURL != "" {
+		notifyMode = "webhook"
+	}
+	log.Printf("notify config: notify_mode=%s notify_enabled=%t webhook_configured=%t", notifyMode, cfg.NotifyEnabled, cfg.NotifyWebhookURL != "")
 
 	service, err := app.NewService(database, queries, jwtManager, mailer, notifier, cfg)
 	if err != nil {

@@ -78,6 +78,8 @@ export default function ToolsPage() {
   }, []);
 
   useEffect(() => {
+    if (loading || tools.length === 0) return;
+
     const invalidIds = Array.from(selectedToolIds).filter((toolId) => {
       const target = tools.find((tool) => tool.id === toolId);
       return !target || target.status !== "available";

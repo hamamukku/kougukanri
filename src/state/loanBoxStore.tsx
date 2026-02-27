@@ -41,11 +41,19 @@ function writeSelection(ids: Set<string>) {
 }
 
 export function LoanBoxProvider({ children }: { children: React.ReactNode }) {
-  const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(() => readSelection());
+  const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(new Set());
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedToolIds(readSelection());
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
     writeSelection(selectedToolIds);
-  }, [selectedToolIds]);
+  }, [selectedToolIds, hydrated]);
 
   const value = useMemo<LoanBoxContextValue>(() => {
     return {

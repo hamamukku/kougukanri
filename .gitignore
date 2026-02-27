@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -12,13 +13,27 @@
 
 # testing
 /coverage
+**/coverage/
 
 # next.js
 /.next/
 /out/
+**/.next/
+**/out/
 
 # production
 /build
+**/build/
+**/dist/
+
+# monorepo cache / temp artifacts
+**/.turbo/
+**/.cache/
+**/*.log
+**/.DS_Store
+**/Thumbs.db
+**/thumbs.db
+frontend/docs/
 
 # misc
 .DS_Store
@@ -33,6 +48,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !backend/.env.example
+!frontend/.env.local.example
 
 # vercel
 .vercel

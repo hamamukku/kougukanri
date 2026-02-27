@@ -1,91 +1,104 @@
-# Tool Management API Server
+# Tool Management (Backend + Frontend)
 
-This repository contains a Go backend API for tool warehouse management.
+This repository contains:
+- Go backend API (`backend/`)
+- Next.js frontend (new copy under `frontend/`)
 
 ## Stack
-- Go 1.22+
-- gin-gonic/gin
-- PostgreSQL (Docker)
-- golang-migrate/migrate
-- sqlc
-- JWT Bearer auth
-- robfig/cron/v3 (06:00 JST daily)
-- SMTP mail
+- Backend: Go 1.22+, gin, PostgreSQL, sqlc, JWT Bearer auth
+- Frontend: Next.js App Router, TypeScript
 
 ## Layout
-- `docker-compose.yml`: `db` and `api` services
 - `backend/`: API app
-  - `cmd/api/main.go`
-  - `db/migrations`
-  - `db/query`
-  - `sqlc.yaml`
+- `frontend/`: migrated frontend app (active frontend target)
+- `app/`, `src/`, `public/` (repo root): old frontend copy kept for migration safety
+- `docker-compose.yml`: `db` + `api` services
 
-## Start
+## Backend Start
 ```bash
 docker compose up --build
 ```
 
 Endpoints:
 - API: `http://localhost:3000`
-- DB: `localhost:5432`
-- Health: `GET /health` -> 200
+- Health: `GET /health`
 
-The API applies migrations automatically at startup.
+### Windows + Docker Desktop Troubleshooting
+If startup fails with:
+- `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified`
 
-If `5432` is already used on the host, either stop the existing DB process or change the compose mapping from `"5432:5432"` to `"5433:5432"` and reconnect with port `5433`.
+Check in order:
+1. Start Docker Desktop app (`C:\Program Files\Docker\Docker\Docker Desktop.exe`).
+2. Wait until Docker Desktop shows `Engine running`.
+3. Confirm in terminal:
+   - `docker version` (both Client and Server should be shown)
+   - `docker compose ps` (no pipe error)
+4. Confirm WSL2 backend:
+   - `wsl -l -v`
+   - `docker-desktop` and `docker-desktop-data` should be present with `VERSION 2`
+5. If still failing:
+   - Restart Docker Desktop from UI (`Troubleshoot` -> `Restart Docker Desktop`)
+   - Or Windows restart, then launch Docker Desktop first, then run `docker compose up --build`
+6. If service is stopped and cannot be started from non-admin terminal:
+   - Run Docker Desktop as your normal user first (preferred)
+   - If corporate policy blocks service startup, ask local admin to enable Docker Desktop service startup
 
-## Seed admin
-Seed admin creation runs only when `ENABLE_SEED_ADMIN=true`.
+### Port 5432 Conflict
+If `5432` is already used:
+1. Stop local PostgreSQL using that port, or
+2. Change `docker-compose.yml` DB mapping from `"5432:5432"` to `"5433:5432"`
+3. Update backend DB connection to use `5433`
 
-`docker-compose.yml` enables seed for local dev. If `users` table is empty, one admin is created:
-- username: `admin`
-- email: `admin@example.com`
-- password: `admin123`
-
-Operational caution:
-- Change the initial password immediately in production.
-- Disable seed admin after bootstrap (`ENABLE_SEED_ADMIN=false`).
-- Removing `SEED_ADMIN_*` variables after bootstrap is recommended.
-
-## Environment variables
-Template: `backend/.env.example`
-
-Main variables:
-- `DATABASE_URL`
-- `JWT_SECRET`
-- `MIGRATIONS_PATH`
-- `CRON_ENABLED`
-- `ENABLE_SEED_ADMIN`
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`
-- `NOTIFY_WEBHOOK_URL`
-  - empty: notifier is always noop
-  - set: notifier is enabled by default
-- `NOTIFY_ENABLED` (optional override)
-  - `false`: force notifier noop even when webhook URL is set
-  - unset: keep default behavior from `NOTIFY_WEBHOOK_URL`
-
-Startup log includes notifier mode for diagnosis:
-- `notify_mode=(noop|webhook)`
-- `notify_enabled=(true|false)`
-- `webhook_configured=(true|false)` (URL value itself is not logged)
-
-## sqlc
+## Frontend Start
+1. Move to frontend app directory
 ```bash
-bash backend/scripts/sqlc_generate.sh
+cd frontend
 ```
 
-Recommended version: `sqlc v1.27.0` (recorded in `backend/.sqlc-version.txt`).
-
-Generated query code is stored in `backend/internal/sqlc`.
-
-## Manual migrate (optional)
-The app already runs migrations automatically. CLI example:
-
+2. Install dependencies
 ```bash
-migrate -path backend/db/migrations -database "postgres://postgres:postgres@localhost:5432/kougukanri?sslmode=disable&TimeZone=Asia%2FTokyo" up
+npm i
 ```
 
-## Required APIs
+3. Create local env file
+```bash
+cp .env.local.example .env.local
+```
+(PowerShell: `Copy-Item .env.local.example .env.local`)
+
+4. Start frontend dev server
+```bash
+npm run dev
+```
+
+Frontend URL:
+- `http://localhost:3100`
+
+## Frontend Environment Variables
+Template: `frontend/.env.local.example`
+
+- `NEXT_PUBLIC_API_BASE_URL` (default example: `http://localhost:3000`)
+- `NEXT_PUBLIC_USE_MOCKS`
+  - `0`: use real backend API (default)
+  - `1`: enable MSW mocks
+
+## API Routing / CORS Strategy
+Frontend uses Next.js rewrites:
+- `frontend/next.config.ts`
+- `/api/*` on frontend is proxied to `${NEXT_PUBLIC_API_BASE_URL}/api/*`
+
+This allows frontend code to call relative paths (`/api/...`) and avoid browser CORS issues in local development.
+
+## Auth Flow (Frontend)
+- Login page calls `POST /api/auth/login`
+- Token is stored in cookie (`auth_token`)
+- Frontend fetch wrapper sends `Authorization: Bearer <token>`
+- User info is synced with `GET /api/auth/me` and reflected in UI
+- Redirect policy:
+  - `401` -> `/login`
+  - `403` -> `/tools`
+
+## Required APIs (P1)
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `GET /api/warehouses`
@@ -104,105 +117,72 @@ migrate -path backend/db/migrations -database "postgres://postgres:postgres@loca
 - `POST /api/admin/returns/approve-items`
 - `POST /api/admin/users`
 
-## Error format
-```json
-{
-  "error": {
-    "code": "RESERVATION_CONFLICT",
-    "message": "...",
-    "details": {}
-  }
-}
+## Seed Admin (Local)
+When `ENABLE_SEED_ADMIN=true` and users table is empty:
+- username: `admin`
+- email: `admin@example.com`
+- password: `admin123`
+
+## Minimum Flow Check
+1. Login as admin.
+2. Create warehouse (`/admin/warehouses`).
+3. Create tool (`/admin/tools`).
+4. Create user (`/admin/users`).
+5. Login as created user.
+6. Select tool in `/tools`, create loan in `/loan-box`.
+7. Request return in `/my-loans`.
+8. Approve return in `/admin/returns` (`approve-box` or `approve-items`).
+9. Confirm tool returns to `AVAILABLE` in `/tools`.
+
+### Minimum Flow (PowerShell Script)
+For Windows local verification (API direct or via frontend rewrite):
+```powershell
+powershell -ExecutionPolicy Bypass -File .\\e2e_flow_windows.ps1
 ```
 
-## Error codes
-- `NOT_FOUND`
-- `INVALID_REQUEST`
-- `UNAUTHORIZED`
-- `FORBIDDEN`
-- `RESERVATION_CONFLICT`
-- `TOOL_NOT_AVAILABLE`
-- `TOOL_RESERVED_BY_OTHER`
-- `ALREADY_REQUESTED`
-- `ALREADY_APPROVED`
+Use frontend rewrite path (`http://localhost:3100/api/*`) instead of backend direct:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\\e2e_flow_windows.ps1 -BaseUrl http://localhost:3100
+```
 
-## Minimum flow check
-1. Login as seed admin.
-2. Create warehouse as admin.
-3. Register tools as admin.
-4. Create normal user as admin.
-5. Login as user and create loan/reservation via `POST /api/loan-boxes`.
-6. Request return via `POST /api/my/loans/:loanItemId/return-request`.
-7. Approve return as admin (`approve-box` or `approve-items`).
-8. Verify tool becomes `AVAILABLE` in `GET /api/tools`.
+The script prints each step and exits immediately on failure so you can see where connection broke.
 
-## Reservation overlap check
-Create overlapping period for same tool and confirm `409 RESERVATION_CONFLICT`.
+### Rewrite Behavior Checks
+When frontend rewrite is enabled (`frontend/next.config.ts`):
+1. Backend down check:
+   - Stop backend API (`docker compose stop api`)
+   - Call `http://localhost:3100/api/auth/login`
+   - Expected: `500 Internal Server Error` (proxy target unavailable)
+2. 401 check:
+   - Call `/api/tools` with invalid bearer token
+   - Expected: `401`
+3. 403 check:
+   - Login as normal user and call `/api/admin/tools`
+   - Expected: `403`
+4. Page redirects:
+   - `GET /tools` without auth cookie -> redirect `/login?next=...`
+   - `GET /admin/tools` with `role=user` cookie -> redirect `/tools`
 
-## Reservation policy
-予約最優先。開始前でも他人は借りられない。  
-If another user has a future reservation for a tool, loans with `startDate <= today` are blocked with `TOOL_RESERVED_BY_OTHER`.
+## Backend Env Template
+See `backend/.env.example`.
 
-## E2E smoke script
+Main variables:
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `MIGRATIONS_PATH`
+- `CRON_ENABLED`
+- `ENABLE_SEED_ADMIN`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`
+- `NOTIFY_WEBHOOK_URL`
+- `NOTIFY_ENABLED`
+
+## Utility Scripts
+- SQLC generate:
+```bash
+bash backend/scripts/sqlc_generate.sh
+```
+
+- E2E smoke:
 ```bash
 bash backend/scripts/e2e_smoke.sh
 ```
-
-Optional environment overrides:
-- `BASE_URL` (default: `http://localhost:3000`)
-- `ADMIN_LOGIN_ID` (default: `admin`)
-- `ADMIN_PASSWORD` (default: `admin123`)
-- `SMOKE_USER_PASSWORD` (default: `user12345`)
-
-## Manual API checks
-Use an admin token from `POST /api/auth/login`.
-
-Invalid `warehouseId` should return `400 INVALID_REQUEST`:
-```bash
-curl -i -H "Authorization: Bearer <adminToken>" \
-  "http://localhost:3000/api/tools?warehouseId=xxx"
-```
-
-`/api/tools` should include `items,page,pageSize,total`:
-```bash
-curl -s -H "Authorization: Bearer <adminToken>" \
-  "http://localhost:3000/api/tools?page=1&pageSize=25"
-```
-
-Use a user token from `POST /api/auth/login` for `NOT_FOUND` validation:
-```bash
-curl -i -H "Authorization: Bearer <userToken>" \
-  -X POST \
-  "http://localhost:3000/api/my/loans/00000000-0000-0000-0000-000000000000/return-request"
-```
-
-Audit log list (admin only, newest first, supports `actorId,targetType,targetId,action,from,to,page,pageSize`):
-```bash
-curl -s -H "Authorization: Bearer <adminToken>" \
-  "http://localhost:3000/api/admin/audit-logs?page=1&pageSize=25"
-```
-Response includes `items,page,pageSize,total`.
-
-`from` / `to` input rules:
-- RFC3339 values are used as-is.
-- `YYYY-MM-DD` is interpreted in JST (`Asia/Tokyo`).
-  - `from=YYYY-MM-DD` -> JST `00:00:00.000000000`
-  - `to=YYYY-MM-DD` -> JST `23:59:59.999999999`
-
-BLT tag linkage:
-- `tools.tag_id` is nullable `TEXT` with unique constraint (`NULL` allowed multiple times).
-- Admin can update tag by `PATCH /api/admin/tools/:toolId` with `tagId`.
-- Authed users can lookup tool by tag: `GET /api/tools/by-tag/:tagId`.
-
-## Cron overdue check
-Cron runs every day at `06:00 JST`.
-
-Manual one-shot run:
-```bash
-docker compose exec api /app/api -run-overdue-once
-```
-
-Overdue filter:
-- `return_approved_at IS NULL`
-- `start_date <= today (JST)`
-- `due_date < today (JST)`

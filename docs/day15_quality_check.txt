@@ -1,0 +1,37 @@
+﻿【Day15 品質チェック記録】
+実施日：2026-02-27
+実施者：浜崎
+
+1. 返却承認画面：メール非表示（/admin/returns）
+- 一覧に email が表示されない：OK/NG
+- 詳細/モーダルに email が表示されない：OK/NG
+- ツールチップ/コピー領域に email が表示されない：OK/NG
+備考：
+
+2. 多重送信防止：貸出確定（/loan-box）
+- 連打してもPOSTが1回：OK/NG
+- 送信中 disabled/loading：OK/NG
+備考：
+
+3. 多重送信防止：返却申請（/my-loans）
+- 連打してもPOSTが1回：OK/NG
+- 送信中 disabled/loading：OK/NG
+備考：
+
+4. 多重送信防止：返却承認（/admin/returns）
+- 連打してもPOSTが1回：OK/NG
+- 送信中 disabled/loading：OK/NG
+備考：
+
+5. チェック保持（/tools）
+- (1) 3件チェック：OK/NG
+- (2) 検索：OK/NG
+- (3) 倉庫フィルタ：OK/NG
+- (4) 状態フィルタ：OK/NG
+- (5) ページ移動：OK/NG
+- (6) リロード：OK/NG
+- (7) 貸出確定後クリア：OK/NG
+備考：
+
+【最終判定】Task11：PASS / FAIL
+FAILの場合の未解決項目：

@@ -641,6 +641,118 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 	return updated, nil
 }
 
+type CreateReservationInput struct {
+	StartDate time.Time
+	DueDate   time.Time
+	ToolIDs   []uuid.UUID
+}
+
+type CreateReservationResult struct {
+	ReservationIDs []uuid.UUID
+}
+
+func (s *Service) CreateReservations(ctx context.Context, ownerID uuid.UUID, ownerUsername string, in CreateReservationInput) (CreateReservationResult, error) {
+	if len(in.ToolIDs) == 0 {
+		return CreateReservationResult{}, apierr.UnprocessableEntity("toolIds is required", nil)
+	}
+	if in.DueDate.Before(in.StartDate) {
+		return CreateReservationResult{}, apierr.UnprocessableEntity("dueDate must be equal to or after startDate", nil)
+	}
+	if strings.TrimSpace(ownerUsername) == "" {
+		return CreateReservationResult{}, apierr.InvalidRequest("owner username is required", nil)
+	}
+
+	toolMap := make(map[string]struct{}, len(in.ToolIDs))
+	ordered := make([]uuid.UUID, 0, len(in.ToolIDs))
+	for _, id := range in.ToolIDs {
+		if id == uuid.Nil {
+			return CreateReservationResult{}, apierr.UnprocessableEntity("toolIds contains invalid id", nil)
+		}
+		key := id.String()
+		if _, ok := toolMap[key]; ok {
+			continue
+		}
+		toolMap[key] = struct{}{}
+		ordered = append(ordered, id)
+	}
+
+	sort.Slice(ordered, func(i, j int) bool {
+		return strings.Compare(ordered[i].String(), ordered[j].String()) < 0
+	})
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return CreateReservationResult{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	if _, err := qtx.LockUserForUpdate(ctx, ownerID); err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return CreateReservationResult{}, apierr.InvalidRequest("owner not found", nil)
+		}
+		return CreateReservationResult{}, err
+	}
+
+	reservationIDs := make([]uuid.UUID, 0, len(ordered))
+	for _, toolID := range ordered {
+		if _, err := qtx.GetToolForUpdate(ctx, toolID); err != nil {
+			if stdErrors.Is(err, sql.ErrNoRows) {
+				return CreateReservationResult{}, apierr.NotFound("tool not found")
+			}
+			return CreateReservationResult{}, err
+		}
+
+		overlap, err := qtx.HasOverlappingReservation(ctx, db.HasOverlappingReservationParams{
+			ToolID:    toolID,
+			StartDate: in.StartDate,
+			DueDate:   in.DueDate,
+		})
+		if err != nil {
+			return CreateReservationResult{}, err
+		}
+		if overlap {
+			return CreateReservationResult{}, apierr.Conflict("RESERVATION_CONFLICT", "\u4e88\u7d04\u304c\u91cd\u8907\u3057\u3066\u3044\u307e\u3059", map[string]any{"toolId": toolID.String()})
+		}
+
+		item, err := qtx.CreateReservation(ctx, db.CreateReservationParams{
+			ToolID:        toolID,
+			OwnerUsername: strings.TrimSpace(ownerUsername),
+			StartDate:     in.StartDate,
+			DueDate:       in.DueDate,
+			Status:        "open",
+		})
+		if err != nil {
+			if mapped := mapPQError(err); mapped != nil {
+				return CreateReservationResult{}, mapped
+			}
+			return CreateReservationResult{}, err
+		}
+		reservationIDs = append(reservationIDs, item.ID)
+	}
+
+	if len(reservationIDs) == 0 {
+		return CreateReservationResult{}, apierr.UnprocessableEntity("toolIds is required", nil)
+	}
+
+	if err := s.auditTx(ctx, qtx, &ownerID, "create_reservations", "reservation", uuid.Nil, map[string]any{
+		"startDate": s.DateString(in.StartDate),
+		"dueDate":   s.DateString(in.DueDate),
+		"toolIds":   ordered,
+	}); err != nil {
+		return CreateReservationResult{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return CreateReservationResult{}, mapped
+		}
+		return CreateReservationResult{}, err
+	}
+
+	return CreateReservationResult{ReservationIDs: reservationIDs}, nil
+}
+
 func (s *Service) GetToolByTag(ctx context.Context, tagID string) (db.Tool, error) {
 	tagID = strings.TrimSpace(tagID)
 	if tagID == "" {

@@ -318,6 +318,55 @@ AdminReturnGroup[]（requested のみ）
 
 UI挙動: day12_error_policy.md
 
+## /api/reservations/confirm
+
+### a. 画面目的
+予約を作成する。
+
+### b. 呼ぶAPI一覧
+- POST /api/reservations/confirm
+
+### c. Request I/O
+
+#### POST /api/reservations/confirm
+ボディ: JSON
+
+必須
+- startDate: string（YYYY-MM-DD）
+- dueDate: string（YYYY-MM-DD）
+- toolIds: string[]（1件以上）
+
+任意
+- なし
+
+例
+```json
+{
+  "startDate": "2026-02-01",
+  "dueDate": "2026-02-08",
+  "toolIds": ["t1", "t3"]
+}
+```
+
+### d. Response I/O
+
+#### POST /api/reservations/confirm 200
+- { ok: true, reservationIds: string[] }
+
+例
+```json
+{ "ok": true, "reservationIds": ["r-01", "r-02"] }
+```
+
+### e. Errors
+| status | 条件 |
+|---|---|
+| 422 | startDate/dueDate 形式不正、未入力、dueDate < startDate、toolIds 空 |
+| 409 | 同一 tool_id で既存 open 予約と期間重複 |
+| 404 | 対象 tool が存在しない |
+
+UI挙動: day12_error_policy.md
+
 ## /admin/tools
 
 ### a. 画面目的
@@ -429,6 +478,7 @@ Method / Path
 - POST /api/my/returns/request
 - GET /api/admin/returns
 - POST /api/admin/returns/approve
+- POST /api/reservations/confirm
 - GET /api/admin/users
 - POST /api/admin/users
 - PATCH /api/admin/users/:id
@@ -451,6 +501,7 @@ Method / Path
 - /admin/tools: GET /api/admin/tools, GET /api/admin/warehouses, POST /api/admin/tools, PATCH /api/admin/tools/:id, DELETE /api/admin/tools/:id
 - /admin/warehouses: GET /api/admin/warehouses, POST /api/admin/warehouses, PATCH /api/admin/warehouses/:id, DELETE /api/admin/warehouses/:id
 - /admin/users: GET /api/admin/users, POST /api/admin/users, PATCH /api/admin/users/:id, DELETE /api/admin/users/:id, POST /api/admin/dev/reset
+- 予約API: POST /api/reservations/confirm
 
-未使用/未呼び出し: なし（ただし admin 画面内の各 CRUD を含めると全件使用）
+未使用/未呼び出し: なし（ただし新規予約APIは画面側呼び出し未定）
 

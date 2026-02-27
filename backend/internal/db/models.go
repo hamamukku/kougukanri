@@ -130,6 +130,16 @@ type OverdueLoanItem struct {
 	BorrowerEmail    string
 }
 
+type Reservation struct {
+	ID            uuid.UUID
+	ToolID        uuid.UUID
+	OwnerUsername string
+	StartDate     time.Time
+	DueDate       time.Time
+	Status        string
+	CreatedAt     time.Time
+}
+
 type AuditLog struct {
 	ID         uuid.UUID
 	ActorID    uuid.NullUUID

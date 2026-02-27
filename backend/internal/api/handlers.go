@@ -42,6 +42,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	authed.GET("/tools/by-tag/:tagId", h.getToolByTag)
 
 	authed.POST("/loan-boxes", h.createLoanBox)
+	authed.POST("/reservations/confirm", h.confirmReservations)
 	authed.GET("/my/loans", h.listMyLoans)
 	authed.POST("/my/loans/:loanItemId/return-request", h.returnRequest)
 
@@ -426,6 +427,12 @@ type createLoanBoxRequest struct {
 	ItemDueOverrides map[string]string `json:"itemDueOverrides"`
 }
 
+type createReservationsRequest struct {
+	StartDate string   `json:"startDate"`
+	DueDate   string   `json:"dueDate"`
+	ToolIDs   []string `json:"toolIds"`
+}
+
 func (h *Handler) createLoanBox(c *gin.Context) {
 	user, _ := CurrentUser(c)
 	var req createLoanBoxRequest
@@ -494,6 +501,48 @@ func (h *Handler) createLoanBox(c *gin.Context) {
 		"boxId":          result.BoxID,
 		"boxDisplayName": result.BoxDisplayName,
 		"createdItems":   createdItems,
+	})
+}
+
+func (h *Handler) confirmReservations(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	var req createReservationsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
+		return
+	}
+	startDate, err := h.svc.ParseDateJST(req.StartDate)
+	if err != nil {
+		WriteError(c, apierr.UnprocessableEntity("startDate must be YYYY-MM-DD", nil))
+		return
+	}
+	dueDate, err := h.svc.ParseDateJST(req.DueDate)
+	if err != nil {
+		WriteError(c, apierr.UnprocessableEntity("dueDate must be YYYY-MM-DD", nil))
+		return
+	}
+	toolIDs := make([]uuid.UUID, 0, len(req.ToolIDs))
+	for _, raw := range req.ToolIDs {
+		id, parseErr := uuid.Parse(strings.TrimSpace(raw))
+		if parseErr != nil {
+			WriteError(c, apierr.UnprocessableEntity("toolIds contains invalid uuid", map[string]any{"toolId": raw}))
+			return
+		}
+		toolIDs = append(toolIDs, id)
+	}
+
+	result, err := h.svc.CreateReservations(c.Request.Context(), user.ID, user.UserName, app.CreateReservationInput{
+		StartDate: startDate,
+		DueDate:   dueDate,
+		ToolIDs:   toolIDs,
+	})
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"ok":             true,
+		"reservationIds": result.ReservationIDs,
 	})
 }
 

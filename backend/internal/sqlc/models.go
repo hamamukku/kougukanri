@@ -77,3 +77,13 @@ type Warehouse struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+type Reservation struct {
+	ID            uuid.UUID `json:"id"`
+	ToolID        uuid.UUID `json:"tool_id"`
+	OwnerUsername string    `json:"owner_username"`
+	StartDate     time.Time `json:"start_date"`
+	DueDate       time.Time `json:"due_date"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+}

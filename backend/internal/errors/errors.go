@@ -21,6 +21,10 @@ func InvalidRequest(message string, details any) *APIError {
 	return New(http.StatusBadRequest, "INVALID_REQUEST", message, details)
 }
 
+func UnprocessableEntity(message string, details any) *APIError {
+	return New(http.StatusUnprocessableEntity, "UNPROCESSABLE_ENTITY", message, details)
+}
+
 func Unauthorized(message string) *APIError {
 	return New(http.StatusUnauthorized, "UNAUTHORIZED", message, nil)
 }

@@ -1,5 +1,6 @@
-﻿"use client";
+"use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../src/components/ui/Button";
@@ -20,6 +21,7 @@ type MeResponse = {
 
 export default function LoginPage() {
   const router = useRouter();
+  const useMocks = process.env.NEXT_PUBLIC_USE_MOCKS === "1";
 
   const [nextPath, setNextPath] = useState("/tools");
   const [loginId, setLoginId] = useState("");
@@ -85,6 +87,12 @@ export default function LoginPage() {
           {submitting ? "ログイン中..." : "ログイン"}
         </Button>
       </form>
+
+      {useMocks ? (
+        <div style={{ marginTop: 12 }}>
+          <Link href="/signup-request">アカウント申請（モック）</Link>
+        </div>
+      ) : null}
 
       {error ? <p style={{ color: "#b91c1c", marginTop: 12 }}>error: {error}</p> : null}
     </main>

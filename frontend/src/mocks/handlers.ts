@@ -292,6 +292,26 @@ export const handlers = [
     });
   }),
 
+  http.post("/api/public/signup/request", async ({ request }) => {
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse(400, "INVALID_REQUEST", "invalid request body");
+    }
+
+    const obj = readBody(body);
+    const username = typeof obj.username === "string" ? obj.username.trim() : "";
+    const email = typeof obj.email === "string" ? obj.email.trim().toLowerCase() : "";
+    const password = typeof obj.password === "string" ? obj.password : "";
+
+    if (!username || !email || !password) {
+      return errorResponse(400, "INVALID_REQUEST", "username, email, password are required");
+    }
+
+    return HttpResponse.json({ ok: true }, { status: 201 });
+  }),
+
   http.get("/api/warehouses", ({ request }) => {
     const auth = authenticate(request);
     if ("error" in auth) return auth.error;

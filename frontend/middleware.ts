@@ -13,9 +13,9 @@ function createLoginRedirect(request: NextRequest): NextResponse {
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  const isLoginPath = pathname === "/login";
+  const isPublicPath = pathname === "/login" || pathname === "/signup-request";
 
-  if (isLoginPath) {
+  if (isPublicPath) {
     return NextResponse.next();
   }
 

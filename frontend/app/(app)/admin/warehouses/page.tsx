@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -18,6 +18,7 @@ export default function AdminWarehousesPage() {
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const router = useRouter();
 
   const handleApiError = useCallback(
@@ -52,7 +53,7 @@ export default function AdminWarehousesPage() {
   }, [handleApiError]);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
   const onAdd = async () => {
@@ -75,6 +76,27 @@ export default function AdminWarehousesPage() {
     }
   };
 
+  const onDelete = async (warehouse: Warehouse) => {
+    if (deletingId || submitting) return;
+
+    const confirmed = window.confirm(`倉庫「${warehouse.name}」を削除します。よろしいですか？`);
+    if (!confirmed) return;
+
+    setDeletingId(warehouse.id);
+    setErr(null);
+    try {
+      await apiFetchJson<{ ok: boolean }>(`/api/admin/warehouses/${warehouse.id}`, {
+        method: "DELETE",
+      });
+      await loadData();
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (loading) return <main style={{ padding: 16 }}>loading...</main>;
   if (err)
     return (
@@ -85,7 +107,7 @@ export default function AdminWarehousesPage() {
 
   return (
     <main style={{ padding: 16 }}>
-      <h1>倉庫作成</h1>
+      <h1>倉庫管理</h1>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="倉庫名" />
@@ -99,6 +121,7 @@ export default function AdminWarehousesPage() {
           <tr>
             <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ID</th>
             <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>倉庫名</th>
+            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -106,6 +129,17 @@ export default function AdminWarehousesPage() {
             <tr key={warehouse.id}>
               <td style={{ padding: "8px 0" }}>{warehouse.id}</td>
               <td style={{ padding: "8px 0" }}>{warehouse.name}</td>
+              <td style={{ padding: "8px 0" }}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => onDelete(warehouse)}
+                  disabled={deletingId !== null}
+                  style={{ borderColor: "#dc2626", color: "#dc2626" }}
+                >
+                  {deletingId === warehouse.id ? "削除中..." : "削除"}
+                </Button>
+              </td>
             </tr>
           ))}
         </tbody>

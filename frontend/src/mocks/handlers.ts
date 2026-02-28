@@ -841,6 +841,31 @@ export const handlers = [
     return HttpResponse.json({ approvedCount });
   }),
 
+  http.get("/api/admin/users", ({ request }) => {
+    const auth = authenticate(request, "admin");
+    if ("error" in auth) return auth.error;
+
+    const url = new URL(request.url);
+    const page = parsePositiveInt(url.searchParams.get("page"), 1);
+    const pageSize = Math.min(parsePositiveInt(url.searchParams.get("pageSize"), 10), 100);
+    const offset = (page - 1) * pageSize;
+
+    const items = users.map((user) => ({
+      id: user.id,
+      department: user.department,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+    }));
+
+    return HttpResponse.json({
+      items: items.slice(offset, offset + pageSize),
+      page,
+      pageSize,
+      total: items.length,
+    });
+  }),
+
   http.post("/api/admin/users", async ({ request }) => {
     const auth = authenticate(request, "admin");
     if ("error" in auth) return auth.error;
@@ -898,6 +923,41 @@ export const handlers = [
       },
       { status: 201 },
     );
+  }),
+
+  http.delete("/api/admin/users/:userId", ({ request, params }) => {
+    const auth = authenticate(request, "admin");
+    if ("error" in auth) return auth.error;
+
+    const userID = String(params.userId ?? "").trim();
+    if (!userID) {
+      return errorResponse(400, "INVALID_REQUEST", "userId is required");
+    }
+    if (auth.user.id === userID) {
+      return errorResponse(403, "FORBIDDEN", "cannot delete yourself");
+    }
+
+    const target = users.find((user) => user.id === userID);
+    if (!target) {
+      return errorResponse(404, "NOT_FOUND", "user not found");
+    }
+
+    if (target.role === "admin") {
+      const activeAdminCount = users.filter((user) => user.role === "admin").length;
+      if (activeAdminCount <= 1) {
+        return errorResponse(409, "LAST_ADMIN", "cannot delete the last active admin");
+      }
+    }
+
+    users = users.filter((user) => user.id !== userID);
+
+    addAuditLog("delete_user", "user", userID, auth.user.id, {
+      username: target.username,
+      email: target.email,
+      role: target.role,
+    });
+
+    return HttpResponse.json({ ok: true });
   }),
 
   http.get("/api/admin/audit-logs", ({ request }) => {

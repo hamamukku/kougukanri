@@ -12,6 +12,7 @@ type SignupRequestResponse = {
 };
 
 export default function SignupRequestPage() {
+  const [department, setDepartment] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,8 +24,8 @@ export default function SignupRequestPage() {
     event.preventDefault();
     if (submitting) return;
 
-    if (!username.trim() || !email.trim() || !password.trim()) {
-      setError("必須項目を入力してください。");
+    if (!department.trim() || !username.trim() || !email.trim() || !password.trim()) {
+      setError("部署名・ユーザー名・メール・パスワードを入力してください。");
       return;
     }
 
@@ -36,11 +37,13 @@ export default function SignupRequestPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          department: department.trim(),
           username: username.trim(),
           email: email.trim(),
           password,
         }),
       });
+      setDepartment("");
       setUsername("");
       setEmail("");
       setPassword("");
@@ -66,6 +69,14 @@ export default function SignupRequestPage() {
         <h1>アカウント申請</h1>
 
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>部署名</div>
+            <Input
+              value={department}
+              onChange={(event) => setDepartment(event.target.value)}
+              placeholder="engineering"
+            />
+          </div>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>ユーザー名</div>
             <Input

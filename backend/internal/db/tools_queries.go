@@ -191,6 +191,36 @@ func (q *Queries) GetToolByTag(ctx context.Context, tagID string) (Tool, error) 
 	return i, err
 }
 
+const countLoanItemsByToolQuery = `
+SELECT COUNT(*)::bigint AS count
+FROM loan_items
+WHERE tool_id = $1
+`
+
+func (q *Queries) CountLoanItemsByTool(ctx context.Context, toolID uuid.UUID) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countLoanItemsByToolQuery, toolID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteToolByIDQuery = `
+DELETE FROM tools
+WHERE id = $1
+`
+
+func (q *Queries) DeleteToolByID(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteToolByIDQuery, id)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return affected, nil
+}
+
 type CountToolsWithDisplayParams struct {
 	Today       string
 	WarehouseID string

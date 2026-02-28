@@ -15,12 +15,13 @@ export default function SideNav({ role }: Props) {
     { href: "/tools", label: "工具一覧" },
     { href: "/my-loans", label: "貸出一覧" },
     { href: "/loan-box", label: `貸出ボックス (${count})` },
+    { href: "/my-page", label: "マイページ" },
   ];
 
   const adminMenu: MenuItem[] = [
     { href: "/admin/returns", label: "返却承認" },
-    { href: "/admin/users", label: "ユーザー作成" },
-    { href: "/admin/warehouses", label: "倉庫作成" },
+    { href: "/admin/users", label: "ユーザー管理" },
+    { href: "/admin/warehouses", label: "倉庫管理" },
     { href: "/admin/tools", label: "工具管理" },
     { href: "/admin/audit-logs", label: "監査ログ" },
   ];

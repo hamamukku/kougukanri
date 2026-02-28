@@ -32,6 +32,7 @@ type UserSafe struct {
 
 type SignupRequest struct {
 	ID             uuid.UUID
+	Department     string
 	Username       string
 	Email          string
 	PasswordHash   string

@@ -1,6 +1,10 @@
 package db
 
-import "context"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
 
 const listWarehousesQuery = `
 SELECT id, name, created_at, updated_at
@@ -44,4 +48,47 @@ func (q *Queries) CreateWarehouse(ctx context.Context, name string) (Warehouse, 
 	var i Warehouse
 	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
+}
+
+const getWarehouseByIDQuery = `
+SELECT id, name, created_at, updated_at
+FROM warehouses
+WHERE id = $1
+`
+
+func (q *Queries) GetWarehouseByID(ctx context.Context, id uuid.UUID) (Warehouse, error) {
+	row := q.db.QueryRowContext(ctx, getWarehouseByIDQuery, id)
+	var i Warehouse
+	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}
+
+const countToolsByWarehouseQuery = `
+SELECT COUNT(*)::bigint AS count
+FROM tools
+WHERE warehouse_id = $1
+`
+
+func (q *Queries) CountToolsByWarehouse(ctx context.Context, warehouseID uuid.UUID) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countToolsByWarehouseQuery, warehouseID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteWarehouseByIDQuery = `
+DELETE FROM warehouses
+WHERE id = $1
+`
+
+func (q *Queries) DeleteWarehouseByID(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteWarehouseByIDQuery, id)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return affected, nil
 }

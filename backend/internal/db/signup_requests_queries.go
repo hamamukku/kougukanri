@@ -7,6 +7,7 @@ import (
 )
 
 type CreateSignupRequestParams struct {
+	Department   string
 	Username     string
 	Email        string
 	PasswordHash string
@@ -14,6 +15,7 @@ type CreateSignupRequestParams struct {
 
 const createSignupRequestQuery = `
 INSERT INTO user_signup_requests (
+    department,
     username,
     email,
     password_hash,
@@ -23,11 +25,13 @@ INSERT INTO user_signup_requests (
     $1,
     $2,
     $3,
+    $4,
     'pending',
     NOW()
 )
 RETURNING
     id,
+    department,
     username,
     email,
     password_hash,
@@ -40,6 +44,7 @@ RETURNING
 
 func (q *Queries) CreateSignupRequest(ctx context.Context, arg CreateSignupRequestParams) (SignupRequest, error) {
 	row := q.db.QueryRowContext(ctx, createSignupRequestQuery,
+		arg.Department,
 		arg.Username,
 		arg.Email,
 		arg.PasswordHash,
@@ -47,6 +52,7 @@ func (q *Queries) CreateSignupRequest(ctx context.Context, arg CreateSignupReque
 	var i SignupRequest
 	err := row.Scan(
 		&i.ID,
+		&i.Department,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -62,6 +68,7 @@ func (q *Queries) CreateSignupRequest(ctx context.Context, arg CreateSignupReque
 const listPendingSignupRequestsQuery = `
 SELECT
     id,
+    department,
     username,
     email,
     password_hash,
@@ -87,6 +94,7 @@ func (q *Queries) ListPendingSignupRequests(ctx context.Context) ([]SignupReques
 		var i SignupRequest
 		if err := rows.Scan(
 			&i.ID,
+			&i.Department,
 			&i.Username,
 			&i.Email,
 			&i.PasswordHash,
@@ -106,6 +114,7 @@ func (q *Queries) ListPendingSignupRequests(ctx context.Context) ([]SignupReques
 const getPendingSignupRequestForUpdateQuery = `
 SELECT
     id,
+    department,
     username,
     email,
     password_hash,
@@ -124,6 +133,7 @@ func (q *Queries) GetPendingSignupRequestForUpdate(ctx context.Context, id uuid.
 	var i SignupRequest
 	err := row.Scan(
 		&i.ID,
+		&i.Department,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,

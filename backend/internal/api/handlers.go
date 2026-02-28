@@ -45,18 +45,24 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	authed.POST("/loan-boxes", h.createLoanBox)
 	authed.GET("/my/loans", h.listMyLoans)
 	authed.POST("/my/loans/:loanItemId/return-request", h.returnRequest)
+	authed.GET("/my/profile", h.getMyProfile)
+	authed.PATCH("/my/profile", h.patchMyProfile)
 
 	admin := apiGroup.Group("/admin")
 	admin.Use(AuthMiddleware(h.jwtManager, h.svc), RequireRole(app.RoleAdmin))
 	admin.POST("/warehouses", h.createWarehouse)
+	admin.DELETE("/warehouses/:warehouseId", h.deleteWarehouse)
 	admin.GET("/tools", h.listAdminTools)
 	admin.GET("/audit-logs", h.listAuditLogs)
 	admin.POST("/tools", h.createTool)
+	admin.DELETE("/tools/:toolId", h.deleteTool)
 	admin.PATCH("/tools/:toolId", h.patchTool)
 	admin.GET("/returns/requests", h.listReturnRequests)
 	admin.POST("/returns/approve-box", h.approveReturnBox)
 	admin.POST("/returns/approve-items", h.approveReturnItems)
+	admin.GET("/users", h.listUsers)
 	admin.POST("/users", h.createUser)
+	admin.DELETE("/users/:userId", h.deleteUser)
 	admin.GET("/user-requests", h.listSignupRequests)
 	admin.POST("/user-requests/:requestId/approve", h.approveSignupRequest)
 }
@@ -67,9 +73,10 @@ type loginRequest struct {
 }
 
 type createSignupRequestRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Department string `json:"department"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
 }
 
 func (h *Handler) login(c *gin.Context) {
@@ -100,9 +107,10 @@ func (h *Handler) createSignupRequest(c *gin.Context) {
 	}
 
 	item, err := h.svc.CreateSignupRequest(c.Request.Context(), app.SignupRequestInput{
-		Username: req.Username,
-		Email:    req.Email,
-		Password: req.Password,
+		Department: req.Department,
+		Username:   req.Username,
+		Email:      req.Email,
+		Password:   req.Password,
 	})
 	if err != nil {
 		WriteError(c, err)
@@ -112,6 +120,7 @@ func (h *Handler) createSignupRequest(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"ok": true,
 		"request": gin.H{
+			"department":  item.Department,
 			"id":          item.ID,
 			"username":    item.Username,
 			"email":       item.Email,
@@ -130,6 +139,60 @@ func (h *Handler) me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"role":     user.Role,
 		"userName": user.UserName,
+	})
+}
+
+func (h *Handler) getMyProfile(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	profile, err := h.svc.GetMyProfile(c.Request.Context(), user.ID)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         profile.ID,
+		"department": profile.Department,
+		"username":   profile.Username,
+		"email":      profile.Email,
+		"role":       profile.Role,
+		"createdAt":  profile.CreatedAt,
+	})
+}
+
+type patchMyProfileRequest struct {
+	Department *string `json:"department"`
+	Username   *string `json:"username"`
+	Email      *string `json:"email"`
+	Password   *string `json:"password"`
+}
+
+func (h *Handler) patchMyProfile(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	var req patchMyProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
+		return
+	}
+
+	profile, err := h.svc.UpdateMyProfile(c.Request.Context(), user.ID, app.UpdateMyProfileInput{
+		Department: req.Department,
+		Username:   req.Username,
+		Email:      req.Email,
+		Password:   req.Password,
+	})
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         profile.ID,
+		"department": profile.Department,
+		"username":   profile.Username,
+		"email":      profile.Email,
+		"role":       profile.Role,
+		"createdAt":  profile.CreatedAt,
 	})
 }
 
@@ -167,6 +230,20 @@ func (h *Handler) createWarehouse(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"id": item.ID, "name": item.Name})
+}
+
+func (h *Handler) deleteWarehouse(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	warehouseID, err := uuid.Parse(strings.TrimSpace(c.Param("warehouseId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("warehouseId is invalid", nil))
+		return
+	}
+	if err := h.svc.DeleteWarehouse(c.Request.Context(), user.ID, warehouseID); err != nil {
+		WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) listTools(c *gin.Context) {
@@ -361,6 +438,20 @@ func (h *Handler) createTool(c *gin.Context) {
 		"warehouseId": tool.WarehouseID,
 		"baseStatus":  tool.BaseStatus,
 	})
+}
+
+func (h *Handler) deleteTool(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	toolID, err := uuid.Parse(strings.TrimSpace(c.Param("toolId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("toolId is invalid", nil))
+		return
+	}
+	if err := h.svc.DeleteTool(c.Request.Context(), user.ID, toolID); err != nil {
+		WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 type optionalString struct {
@@ -675,6 +766,41 @@ type createUserRequest struct {
 	Role       string `json:"role"`
 }
 
+func (h *Handler) listUsers(c *gin.Context) {
+	filter := app.UserListFilter{
+		Page:     parsePositiveInt(c.Query("page"), 1),
+		PageSize: parsePositiveInt(c.DefaultQuery("pageSize", "10"), 10),
+	}
+	if filter.PageSize > 100 {
+		filter.PageSize = 100
+	}
+
+	result, err := h.svc.ListUsers(c.Request.Context(), filter)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	resp := make([]gin.H, 0, len(result.Items))
+	for _, user := range result.Items {
+		resp = append(resp, gin.H{
+			"id":         user.ID,
+			"department": user.Department,
+			"username":   user.Username,
+			"email":      user.Email,
+			"role":       user.Role,
+			"createdAt":  user.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":    resp,
+		"page":     result.Page,
+		"pageSize": result.PageSize,
+		"total":    result.Total,
+	})
+}
+
 func (h *Handler) createUser(c *gin.Context) {
 	var req createUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -701,6 +827,22 @@ func (h *Handler) createUser(c *gin.Context) {
 	})
 }
 
+func (h *Handler) deleteUser(c *gin.Context) {
+	admin, _ := CurrentUser(c)
+	userID, err := uuid.Parse(strings.TrimSpace(c.Param("userId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("userId is invalid", nil))
+		return
+	}
+
+	if err := h.svc.DeleteUser(c.Request.Context(), admin.ID, userID); err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *Handler) listSignupRequests(c *gin.Context) {
 	items, err := h.svc.ListPendingSignupRequests(c.Request.Context())
 	if err != nil {
@@ -711,6 +853,7 @@ func (h *Handler) listSignupRequests(c *gin.Context) {
 	resp := make([]gin.H, 0, len(items))
 	for _, item := range items {
 		resp = append(resp, gin.H{
+			"department":  item.Department,
 			"id":          item.ID,
 			"username":    item.Username,
 			"email":       item.Email,

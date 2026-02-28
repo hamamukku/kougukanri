@@ -462,6 +462,57 @@ func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name s
 	return warehouse, nil
 }
 
+func (s *Service) DeleteWarehouse(ctx context.Context, actorID, warehouseID uuid.UUID) error {
+	if warehouseID == uuid.Nil {
+		return apierr.InvalidRequest("warehouseId is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	warehouse, err := qtx.GetWarehouseByID(ctx, warehouseID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return apierr.NotFound("warehouse not found")
+		}
+		return err
+	}
+
+	toolCount, err := qtx.CountToolsByWarehouse(ctx, warehouseID)
+	if err != nil {
+		return err
+	}
+	if toolCount > 0 {
+		return apierr.Conflict("WAREHOUSE_NOT_EMPTY", "cannot delete warehouse that has tools", map[string]any{
+			"warehouseId": warehouseID,
+			"toolCount":   toolCount,
+		})
+	}
+
+	affected, err := qtx.DeleteWarehouseByID(ctx, warehouseID)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return apierr.NotFound("warehouse not found")
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "delete_warehouse", "warehouse", warehouseID, map[string]any{
+		"name": warehouse.Name,
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, name string, warehouseID uuid.UUID, baseStatus string) (db.Tool, error) {
 	assetNo = strings.TrimSpace(assetNo)
 	name = strings.TrimSpace(name)
@@ -641,6 +692,58 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 	return updated, nil
 }
 
+func (s *Service) DeleteTool(ctx context.Context, actorID, toolID uuid.UUID) error {
+	if toolID == uuid.Nil {
+		return apierr.InvalidRequest("toolId is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	tool, err := qtx.GetToolForUpdate(ctx, toolID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return apierr.NotFound("tool not found")
+		}
+		return err
+	}
+
+	loanItemCount, err := qtx.CountLoanItemsByTool(ctx, toolID)
+	if err != nil {
+		return err
+	}
+	if loanItemCount > 0 {
+		return apierr.Conflict("TOOL_HAS_LOAN_HISTORY", "cannot delete tool with loan history", map[string]any{
+			"toolId":        toolID,
+			"loanItemCount": loanItemCount,
+		})
+	}
+
+	affected, err := qtx.DeleteToolByID(ctx, toolID)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return apierr.NotFound("tool not found")
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "delete_tool", "tool", toolID, map[string]any{
+		"assetNo": tool.AssetNo,
+		"name":    tool.Name,
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) GetToolByTag(ctx context.Context, tagID string) (db.Tool, error) {
 	tagID = strings.TrimSpace(tagID)
 	if tagID == "" {
@@ -666,17 +769,38 @@ type CreateUserInput struct {
 }
 
 type SignupRequestInput struct {
-	Username string
-	Email    string
-	Password string
+	Department string
+	Username   string
+	Email      string
+	Password   string
 }
 
 type SignupRequestItem struct {
 	ID          uuid.UUID
+	Department  string
 	Username    string
 	Email       string
 	Status      string
 	RequestedAt string
+}
+
+type UpdateMyProfileInput struct {
+	Department *string
+	Username   *string
+	Email      *string
+	Password   *string
+}
+
+type UserListFilter struct {
+	Page     int
+	PageSize int
+}
+
+type UserListResult struct {
+	Items    []db.UserSafe
+	Total    int64
+	Page     int
+	PageSize int
 }
 
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSafe, error) {
@@ -713,13 +837,207 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSa
 	return user, nil
 }
 
+func (s *Service) ListUsers(ctx context.Context, filter UserListFilter) (UserListResult, error) {
+	page := filter.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	total, err := s.queries.CountActiveUsers(ctx)
+	if err != nil {
+		return UserListResult{}, err
+	}
+
+	rows, err := s.queries.ListActiveUsersPage(ctx, db.ListActiveUsersPageParams{
+		Limit:  int32(pageSize),
+		Offset: int32((page - 1) * pageSize),
+	})
+	if err != nil {
+		return UserListResult{}, err
+	}
+
+	return UserListResult{
+		Items:    rows,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}, nil
+}
+
+func (s *Service) DeleteUser(ctx context.Context, adminID, userID uuid.UUID) error {
+	if userID == uuid.Nil {
+		return apierr.InvalidRequest("userId is required", nil)
+	}
+	if adminID == userID {
+		return apierr.Forbidden("cannot delete yourself")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	target, err := qtx.GetUserByID(ctx, userID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return apierr.NotFound("user not found")
+		}
+		return err
+	}
+	if !target.IsActive {
+		return apierr.NotFound("user not found")
+	}
+
+	if target.Role == RoleAdmin {
+		activeAdmins, err := qtx.CountActiveAdmins(ctx)
+		if err != nil {
+			return err
+		}
+		if activeAdmins <= 1 {
+			return apierr.Conflict("LAST_ADMIN", "cannot delete the last active admin", nil)
+		}
+	}
+
+	affected, err := qtx.DeactivateUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return apierr.NotFound("user not found")
+	}
+
+	if err := s.auditTx(ctx, qtx, &adminID, "delete_user", "user", userID, map[string]any{
+		"username": target.Username,
+		"email":    target.Email,
+		"role":     target.Role,
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) GetMyProfile(ctx context.Context, userID uuid.UUID) (db.UserSafe, error) {
+	return s.GetUser(ctx, userID)
+}
+
+func (s *Service) UpdateMyProfile(ctx context.Context, userID uuid.UUID, in UpdateMyProfileInput) (db.UserSafe, error) {
+	if userID == uuid.Nil {
+		return db.UserSafe{}, apierr.InvalidRequest("userId is required", nil)
+	}
+	if in.Department == nil && in.Username == nil && in.Email == nil && in.Password == nil {
+		return db.UserSafe{}, apierr.InvalidRequest("at least one field is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.UserSafe{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	current, err := qtx.GetUserByIDForUpdate(ctx, userID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return db.UserSafe{}, apierr.NotFound("user not found")
+		}
+		return db.UserSafe{}, err
+	}
+	if !current.IsActive {
+		return db.UserSafe{}, apierr.NotFound("user not found")
+	}
+
+	department := current.Department
+	if in.Department != nil {
+		trimmed := strings.TrimSpace(*in.Department)
+		if trimmed == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("department cannot be empty", nil)
+		}
+		department = trimmed
+	}
+
+	username := current.Username
+	if in.Username != nil {
+		trimmed := strings.TrimSpace(*in.Username)
+		if trimmed == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("username cannot be empty", nil)
+		}
+		username = trimmed
+	}
+
+	email := current.Email
+	if in.Email != nil {
+		trimmed := strings.TrimSpace(strings.ToLower(*in.Email))
+		if trimmed == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("email cannot be empty", nil)
+		}
+		email = trimmed
+	}
+
+	passwordHash := current.PasswordHash
+	if in.Password != nil {
+		password := strings.TrimSpace(*in.Password)
+		if password == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("password cannot be empty", nil)
+		}
+		nextHash, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return db.UserSafe{}, hashErr
+		}
+		passwordHash = string(nextHash)
+	}
+
+	updated, err := qtx.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
+		ID:           userID,
+		Department:   department,
+		Username:     username,
+		Email:        email,
+		PasswordHash: passwordHash,
+	})
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.UserSafe{}, mapped
+		}
+		return db.UserSafe{}, err
+	}
+
+	if err := s.auditTx(ctx, qtx, &userID, "update_my_profile", "user", userID, map[string]any{
+		"department": updated.Department,
+		"username":   updated.Username,
+		"email":      updated.Email,
+	}); err != nil {
+		return db.UserSafe{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.UserSafe{}, mapped
+		}
+		return db.UserSafe{}, err
+	}
+	return updated, nil
+}
+
 func (s *Service) CreateSignupRequest(ctx context.Context, in SignupRequestInput) (SignupRequestItem, error) {
+	in.Department = strings.TrimSpace(in.Department)
 	in.Username = strings.TrimSpace(in.Username)
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
 	in.Password = strings.TrimSpace(in.Password)
 
-	if in.Username == "" || in.Email == "" || in.Password == "" {
-		return SignupRequestItem{}, apierr.InvalidRequest("username, email, password are required", nil)
+	if in.Department == "" || in.Username == "" || in.Email == "" || in.Password == "" {
+		return SignupRequestItem{}, apierr.InvalidRequest("department, username, email, password are required", nil)
 	}
 
 	if _, err := s.queries.GetUserByLoginID(ctx, in.Username); err == nil {
@@ -739,6 +1057,7 @@ func (s *Service) CreateSignupRequest(ctx context.Context, in SignupRequestInput
 	}
 
 	req, err := s.queries.CreateSignupRequest(ctx, db.CreateSignupRequestParams{
+		Department:   in.Department,
 		Username:     in.Username,
 		Email:        in.Email,
 		PasswordHash: string(hash),
@@ -752,6 +1071,7 @@ func (s *Service) CreateSignupRequest(ctx context.Context, in SignupRequestInput
 
 	return SignupRequestItem{
 		ID:          req.ID,
+		Department:  req.Department,
 		Username:    req.Username,
 		Email:       req.Email,
 		Status:      req.Status,
@@ -769,6 +1089,7 @@ func (s *Service) ListPendingSignupRequests(ctx context.Context) ([]SignupReques
 	for _, row := range rows {
 		items = append(items, SignupRequestItem{
 			ID:          row.ID,
+			Department:  row.Department,
 			Username:    row.Username,
 			Email:       row.Email,
 			Status:      row.Status,
@@ -800,7 +1121,7 @@ func (s *Service) ApproveSignupRequest(ctx context.Context, adminID, requestID u
 
 	user, err := qtx.CreateUser(ctx, db.CreateUserParams{
 		Role:         RoleUser,
-		Department:   "general",
+		Department:   req.Department,
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: req.PasswordHash,
@@ -822,6 +1143,7 @@ func (s *Service) ApproveSignupRequest(ctx context.Context, adminID, requestID u
 
 	if err := s.auditTx(ctx, qtx, &adminID, "approve_signup_request", "signup_request", requestID, map[string]any{
 		"approvedUserId": user.ID,
+		"department":     user.Department,
 		"username":       user.Username,
 		"email":          user.Email,
 	}); err != nil {

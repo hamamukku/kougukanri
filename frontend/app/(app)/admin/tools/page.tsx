@@ -52,6 +52,7 @@ export default function AdminToolsPage() {
   const [editingBaseStatus, setEditingBaseStatus] = useState<BaseStatus>("AVAILABLE");
 
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const router = useRouter();
 
   const handleApiError = useCallback(
@@ -181,6 +182,29 @@ export default function AdminToolsPage() {
     }
   };
 
+  const onDelete = async (tool: Tool) => {
+    if (deletingId || submitting.size > 0) return;
+
+    const confirmed = window.confirm(`工具「${tool.name} (${tool.assetNo})」を削除します。よろしいですか？`);
+    if (!confirmed) return;
+
+    setDeletingId(tool.id);
+    try {
+      await apiFetchJson<{ ok: boolean }>(`/api/admin/tools/${tool.id}`, {
+        method: "DELETE",
+      });
+      if (editingId === tool.id) {
+        onCancelEdit();
+      }
+      await loadData();
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (loading) return <main style={{ padding: 16 }}>loading...</main>;
   if (err)
     return (
@@ -253,6 +277,7 @@ export default function AdminToolsPage() {
           {tools.map((tool) => {
             const isEditing = editingId === tool.id;
             const isBusy = submitting.has(tool.id);
+            const disableAction = isBusy || deletingId !== null;
             return (
               <tr key={tool.id}>
                 <Td>
@@ -303,17 +328,28 @@ export default function AdminToolsPage() {
                 <Td>
                   {isEditing ? (
                     <>
-                      <Button type="button" onClick={() => onSave(tool.id)} disabled={isBusy}>
+                      <Button type="button" onClick={() => onSave(tool.id)} disabled={disableAction}>
                         保存
                       </Button>
-                      <Button type="button" variant="ghost" onClick={onCancelEdit} disabled={isBusy}>
+                      <Button type="button" variant="ghost" onClick={onCancelEdit} disabled={disableAction}>
                         キャンセル
                       </Button>
                     </>
                   ) : (
-                    <Button type="button" onClick={() => onStartEdit(tool)} disabled={isBusy}>
-                      編集
-                    </Button>
+                    <>
+                      <Button type="button" onClick={() => onStartEdit(tool)} disabled={disableAction}>
+                        編集
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => onDelete(tool)}
+                        disabled={disableAction}
+                        style={{ marginLeft: 8, borderColor: "#dc2626", color: "#dc2626" }}
+                      >
+                        {deletingId === tool.id ? "削除中..." : "削除"}
+                      </Button>
+                    </>
                   )}
                 </Td>
               </tr>

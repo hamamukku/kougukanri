@@ -76,6 +76,19 @@ CREATE TABLE audit_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE user_signup_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    department TEXT NOT NULL,
+    username TEXT NOT NULL,
+    email TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reviewed_at TIMESTAMPTZ NULL,
+    reviewed_by UUID NULL REFERENCES users(id),
+    approved_user_id UUID NULL REFERENCES users(id)
+);
+
 CREATE INDEX idx_tools_warehouse_id ON tools(warehouse_id);
 CREATE UNIQUE INDEX idx_tools_tag_id_unique ON tools(tag_id) WHERE tag_id IS NOT NULL;
 CREATE INDEX idx_loan_items_tool_id ON loan_items(tool_id);
@@ -84,3 +97,6 @@ CREATE INDEX idx_loan_items_box_id ON loan_items(box_id);
 CREATE INDEX idx_loan_items_return_approved_at ON loan_items(return_approved_at);
 CREATE INDEX idx_loan_items_return_requested_at ON loan_items(return_requested_at);
 CREATE INDEX idx_loan_items_tool_period ON loan_items(tool_id, start_date, due_date);
+CREATE UNIQUE INDEX idx_user_signup_requests_username_pending ON user_signup_requests(username) WHERE status = 'pending';
+CREATE UNIQUE INDEX idx_user_signup_requests_email_pending ON user_signup_requests(email) WHERE status = 'pending';
+CREATE INDEX idx_user_signup_requests_status_requested_at ON user_signup_requests(status, requested_at DESC);

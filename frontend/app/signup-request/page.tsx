@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import Button from "../../src/components/ui/Button";
 import Input from "../../src/components/ui/Input";
 import Toast from "../../src/components/ui/Toast";
@@ -12,7 +12,6 @@ type SignupRequestResponse = {
 };
 
 export default function SignupRequestPage() {
-  const useMocks = useMemo(() => process.env.NEXT_PUBLIC_USE_MOCKS === "1", []);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +21,7 @@ export default function SignupRequestPage() {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitting || !useMocks) return;
+    if (submitting) return;
 
     if (!username.trim() || !email.trim() || !password.trim()) {
       setError("必須項目を入力してください。");
@@ -65,11 +64,6 @@ export default function SignupRequestPage() {
     >
       <div style={{ width: 360, maxWidth: "90vw", display: "grid", gap: 12 }}>
         <h1>アカウント申請</h1>
-        {!useMocks ? (
-          <p style={{ color: "#334155", margin: 0 }}>
-            このページはモックモード（NEXT_PUBLIC_USE_MOCKS=1）でのみ利用できます。
-          </p>
-        ) : null}
 
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
           <div>
@@ -78,7 +72,6 @@ export default function SignupRequestPage() {
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               placeholder="your_name"
-              disabled={!useMocks}
             />
           </div>
           <div>
@@ -88,7 +81,6 @@ export default function SignupRequestPage() {
               onChange={(event) => setEmail(event.target.value)}
               type="email"
               placeholder="you@example.com"
-              disabled={!useMocks}
             />
           </div>
           <div>
@@ -97,10 +89,9 @@ export default function SignupRequestPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               type="password"
-              disabled={!useMocks}
             />
           </div>
-          <Button type="submit" disabled={submitting || !useMocks}>
+          <Button type="submit" disabled={submitting}>
             {submitting ? "送信中..." : "申請する"}
           </Button>
         </form>

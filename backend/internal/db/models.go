@@ -30,6 +30,18 @@ type UserSafe struct {
 	UpdatedAt  time.Time
 }
 
+type SignupRequest struct {
+	ID             uuid.UUID
+	Username       string
+	Email          string
+	PasswordHash   string
+	Status         string
+	RequestedAt    time.Time
+	ReviewedAt     sql.NullTime
+	ReviewedBy     uuid.NullUUID
+	ApprovedUserID uuid.NullUUID
+}
+
 type Warehouse struct {
 	ID        uuid.UUID
 	Name      string

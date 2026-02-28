@@ -32,6 +32,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 
 	apiGroup := r.Group("/api")
 	apiGroup.POST("/auth/login", h.login)
+	apiGroup.POST("/public/signup/request", h.createSignupRequest)
 
 	authed := apiGroup.Group("")
 	authed.Use(AuthMiddleware(h.jwtManager, h.svc))
@@ -56,10 +57,18 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	admin.POST("/returns/approve-box", h.approveReturnBox)
 	admin.POST("/returns/approve-items", h.approveReturnItems)
 	admin.POST("/users", h.createUser)
+	admin.GET("/user-requests", h.listSignupRequests)
+	admin.POST("/user-requests/:requestId/approve", h.approveSignupRequest)
 }
 
 type loginRequest struct {
 	LoginID  string `json:"loginId"`
+	Password string `json:"password"`
+}
+
+type createSignupRequestRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
@@ -80,6 +89,35 @@ func (h *Handler) login(c *gin.Context) {
 		"token":    res.Token,
 		"role":     res.Role,
 		"userName": res.UserName,
+	})
+}
+
+func (h *Handler) createSignupRequest(c *gin.Context) {
+	var req createSignupRequestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
+		return
+	}
+
+	item, err := h.svc.CreateSignupRequest(c.Request.Context(), app.SignupRequestInput{
+		Username: req.Username,
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"ok": true,
+		"request": gin.H{
+			"id":          item.ID,
+			"username":    item.Username,
+			"email":       item.Email,
+			"status":      item.Status,
+			"requestedAt": item.RequestedAt,
+		},
 	})
 }
 
@@ -660,6 +698,52 @@ func (h *Handler) createUser(c *gin.Context) {
 		"username":   user.Username,
 		"email":      user.Email,
 		"role":       user.Role,
+	})
+}
+
+func (h *Handler) listSignupRequests(c *gin.Context) {
+	items, err := h.svc.ListPendingSignupRequests(c.Request.Context())
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	resp := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		resp = append(resp, gin.H{
+			"id":          item.ID,
+			"username":    item.Username,
+			"email":       item.Email,
+			"status":      item.Status,
+			"requestedAt": item.RequestedAt,
+		})
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *Handler) approveSignupRequest(c *gin.Context) {
+	admin, _ := CurrentUser(c)
+	requestID, err := uuid.Parse(strings.TrimSpace(c.Param("requestId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("requestId is invalid", nil))
+		return
+	}
+
+	user, err := h.svc.ApproveSignupRequest(c.Request.Context(), admin.ID, requestID)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ok": true,
+		"user": gin.H{
+			"id":         user.ID,
+			"department": user.Department,
+			"username":   user.Username,
+			"email":      user.Email,
+			"role":       user.Role,
+		},
 	})
 }
 

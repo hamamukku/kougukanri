@@ -665,6 +665,20 @@ type CreateUserInput struct {
 	Role       string
 }
 
+type SignupRequestInput struct {
+	Username string
+	Email    string
+	Password string
+}
+
+type SignupRequestItem struct {
+	ID          uuid.UUID
+	Username    string
+	Email       string
+	Status      string
+	RequestedAt string
+}
+
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSafe, error) {
 	in.Department = strings.TrimSpace(in.Department)
 	in.Username = strings.TrimSpace(in.Username)
@@ -691,6 +705,130 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSa
 		PasswordHash: string(hash),
 	})
 	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.UserSafe{}, mapped
+		}
+		return db.UserSafe{}, err
+	}
+	return user, nil
+}
+
+func (s *Service) CreateSignupRequest(ctx context.Context, in SignupRequestInput) (SignupRequestItem, error) {
+	in.Username = strings.TrimSpace(in.Username)
+	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
+	in.Password = strings.TrimSpace(in.Password)
+
+	if in.Username == "" || in.Email == "" || in.Password == "" {
+		return SignupRequestItem{}, apierr.InvalidRequest("username, email, password are required", nil)
+	}
+
+	if _, err := s.queries.GetUserByLoginID(ctx, in.Username); err == nil {
+		return SignupRequestItem{}, apierr.Conflict("USERNAME_DUPLICATE", "username already exists", nil)
+	} else if !stdErrors.Is(err, sql.ErrNoRows) {
+		return SignupRequestItem{}, err
+	}
+	if _, err := s.queries.GetUserByLoginID(ctx, in.Email); err == nil {
+		return SignupRequestItem{}, apierr.Conflict("EMAIL_DUPLICATE", "email already exists", nil)
+	} else if !stdErrors.Is(err, sql.ErrNoRows) {
+		return SignupRequestItem{}, err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return SignupRequestItem{}, err
+	}
+
+	req, err := s.queries.CreateSignupRequest(ctx, db.CreateSignupRequestParams{
+		Username:     in.Username,
+		Email:        in.Email,
+		PasswordHash: string(hash),
+	})
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return SignupRequestItem{}, mapped
+		}
+		return SignupRequestItem{}, err
+	}
+
+	return SignupRequestItem{
+		ID:          req.ID,
+		Username:    req.Username,
+		Email:       req.Email,
+		Status:      req.Status,
+		RequestedAt: req.RequestedAt.In(s.jst).Format(time.RFC3339),
+	}, nil
+}
+
+func (s *Service) ListPendingSignupRequests(ctx context.Context) ([]SignupRequestItem, error) {
+	rows, err := s.queries.ListPendingSignupRequests(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]SignupRequestItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, SignupRequestItem{
+			ID:          row.ID,
+			Username:    row.Username,
+			Email:       row.Email,
+			Status:      row.Status,
+			RequestedAt: row.RequestedAt.In(s.jst).Format(time.RFC3339),
+		})
+	}
+	return items, nil
+}
+
+func (s *Service) ApproveSignupRequest(ctx context.Context, adminID, requestID uuid.UUID) (db.UserSafe, error) {
+	if requestID == uuid.Nil {
+		return db.UserSafe{}, apierr.InvalidRequest("requestId is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.UserSafe{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	req, err := qtx.GetPendingSignupRequestForUpdate(ctx, requestID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return db.UserSafe{}, apierr.NotFound("signup request not found")
+		}
+		return db.UserSafe{}, err
+	}
+
+	user, err := qtx.CreateUser(ctx, db.CreateUserParams{
+		Role:         RoleUser,
+		Department:   "general",
+		Username:     req.Username,
+		Email:        req.Email,
+		PasswordHash: req.PasswordHash,
+	})
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.UserSafe{}, mapped
+		}
+		return db.UserSafe{}, err
+	}
+
+	if err := qtx.MarkSignupRequestApproved(ctx, db.MarkSignupRequestApprovedParams{
+		ID:             requestID,
+		ReviewedBy:     adminID,
+		ApprovedUserID: user.ID,
+	}); err != nil {
+		return db.UserSafe{}, err
+	}
+
+	if err := s.auditTx(ctx, qtx, &adminID, "approve_signup_request", "signup_request", requestID, map[string]any{
+		"approvedUserId": user.ID,
+		"username":       user.Username,
+		"email":          user.Email,
+	}); err != nil {
+		return db.UserSafe{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
 		if mapped := mapPQError(err); mapped != nil {
 			return db.UserSafe{}, mapped
 		}
@@ -1313,6 +1451,10 @@ func mapPQError(err error) error {
 			return apierr.Conflict("USERNAME_DUPLICATE", "username already exists", nil)
 		case "users_email_key":
 			return apierr.Conflict("EMAIL_DUPLICATE", "email already exists", nil)
+		case "idx_user_signup_requests_username_pending":
+			return apierr.Conflict("SIGNUP_REQUEST_USERNAME_DUPLICATE", "pending signup request for username already exists", nil)
+		case "idx_user_signup_requests_email_pending":
+			return apierr.Conflict("SIGNUP_REQUEST_EMAIL_DUPLICATE", "pending signup request for email already exists", nil)
 		case "loan_boxes_borrower_id_box_no_key":
 			return apierr.Conflict("INVALID_REQUEST", "box number conflict", nil)
 		default:

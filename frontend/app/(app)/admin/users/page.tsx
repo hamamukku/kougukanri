@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
@@ -17,6 +17,19 @@ type CreatedUser = {
   role: Role;
 };
 
+type SignupRequestItem = {
+  id: string;
+  username: string;
+  email: string;
+  status: "pending" | "approved" | "rejected";
+  requestedAt: string;
+};
+
+type ApproveSignupResponse = {
+  ok: boolean;
+  user: CreatedUser;
+};
+
 export default function AdminUsersPage() {
   const [department, setDepartment] = useState("");
   const [username, setUsername] = useState("");
@@ -24,11 +37,14 @@ export default function AdminUsersPage() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("user");
   const [created, setCreated] = useState<CreatedUser[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<SignupRequestItem[]>([]);
+  const [loadingPending, setLoadingPending] = useState(true);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
 
-  const handleApiError = (error: unknown): string | null => {
+  const handleApiError = useCallback((error: unknown): string | null => {
     if (isHttpError(error) && error.status === 401) {
       clearAuthSession();
       router.push("/login");
@@ -41,7 +57,25 @@ export default function AdminUsersPage() {
     }
 
     return getHttpErrorMessage(error);
-  };
+  }, [router]);
+
+  const loadPendingRequests = useCallback(async () => {
+    setLoadingPending(true);
+
+    try {
+      const requests = await apiFetchJson<SignupRequestItem[]>("/api/admin/user-requests");
+      setPendingRequests(requests);
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    } finally {
+      setLoadingPending(false);
+    }
+  }, [handleApiError]);
+
+  useEffect(() => {
+    void loadPendingRequests();
+  }, [loadPendingRequests]);
 
   const onCreate = async () => {
     if (submitting) return;
@@ -73,6 +107,27 @@ export default function AdminUsersPage() {
       if (message) setErr(message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const onApprove = async (requestId: string) => {
+    if (approvingId) return;
+
+    setApprovingId(requestId);
+    setErr(null);
+
+    try {
+      const result = await apiFetchJson<ApproveSignupResponse>(`/api/admin/user-requests/${requestId}/approve`, {
+        method: "POST",
+      });
+
+      setPendingRequests((prev) => prev.filter((item) => item.id !== requestId));
+      setCreated((prev) => [result.user, ...prev].slice(0, 10));
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    } finally {
+      setApprovingId(null);
     }
   };
 
@@ -146,6 +201,56 @@ export default function AdminUsersPage() {
                   <td style={{ padding: "8px 0" }}>{item.username}</td>
                   <td style={{ padding: "8px 0" }}>{item.email}</td>
                   <td style={{ padding: "8px 0" }}>{item.role}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section style={{ marginTop: 28 }}>
+        <h2 style={{ marginBottom: 8 }}>承認待ち申請</h2>
+        {loadingPending ? (
+          <p>読み込み中...</p>
+        ) : pendingRequests.length === 0 ? (
+          <p>承認待ちはありません。</p>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
+                  ユーザー名
+                </th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
+                  メール
+                </th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
+                  申請日時
+                </th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
+                  ステータス
+                </th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingRequests.map((item) => (
+                <tr key={item.id}>
+                  <td style={{ padding: "8px 0" }}>{item.username}</td>
+                  <td style={{ padding: "8px 0" }}>{item.email}</td>
+                  <td style={{ padding: "8px 0" }}>{item.requestedAt}</td>
+                  <td style={{ padding: "8px 0" }}>{item.status}</td>
+                  <td style={{ padding: "8px 0" }}>
+                    <Button
+                      type="button"
+                      onClick={() => onApprove(item.id)}
+                      disabled={approvingId !== null}
+                    >
+                      {approvingId === item.id ? "承認中..." : "承認"}
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>

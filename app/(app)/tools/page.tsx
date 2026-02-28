@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../../src/components/ui/Button";
 import Input from "../../../src/components/ui/Input";
 import Select from "../../../src/components/ui/Select";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
+import Toast from "../../../src/components/ui/Toast";
 import { statusLabel } from "../../../src/utils/format";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../src/utils/http";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
@@ -28,12 +29,25 @@ type Warehouse = {
 type SearchMode = "partial" | "exact";
 
 const PAGE_SIZE = 25;
+const statusColorByValue: Record<ToolStatus, string> = {
+  available: "#15803d",
+  loaned: "#ca8a04",
+  repairing: "#2563eb",
+  lost: "#dc2626",
+};
+
+const statusColor = (status: ToolStatus): string => statusColorByValue[status];
 
 export default function ToolsPage() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+
+  const [draftQ, setDraftQ] = useState("");
+  const [draftSearchMode, setDraftSearchMode] = useState<SearchMode>("partial");
+  const [draftWarehouseFilter, setDraftWarehouseFilter] = useState("all");
+  const [draftStatusFilter, setDraftStatusFilter] = useState("all");
 
   const [q, setQ] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("partial");
@@ -43,6 +57,7 @@ export default function ToolsPage() {
 
   const { selectedToolIds, addToSelection, removeFromSelection, hasInSelection } = useLoanBox();
   const router = useRouter();
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleApiError = (error: unknown): string | null => {
     if (isHttpError(error) && error.status === 401) {
@@ -88,7 +103,7 @@ export default function ToolsPage() {
     for (const id of invalidIds) {
       removeFromSelection(id);
     }
-  }, [tools, selectedToolIds, removeFromSelection]);
+  }, [loading, tools, selectedToolIds, removeFromSelection]);
 
   const warehouseNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -104,8 +119,7 @@ export default function ToolsPage() {
         const targetName = tool.name.toLowerCase();
         const targetAsset = tool.assetNo.toLowerCase();
         if (searchMode === "exact" && targetName !== keyword && targetAsset !== keyword) return false;
-        if (searchMode === "partial" && !targetName.includes(keyword) && !targetAsset.includes(keyword))
-          return false;
+        if (searchMode === "partial" && !targetName.includes(keyword) && !targetAsset.includes(keyword)) return false;
       }
       if (warehouseFilter !== "all" && tool.warehouseId !== warehouseFilter) return false;
       if (statusFilter !== "all" && tool.status !== statusFilter) return false;
@@ -124,9 +138,23 @@ export default function ToolsPage() {
     return filteredTools.slice(start, start + PAGE_SIZE);
   }, [filteredTools, safePage]);
 
-  const onToggle = (toolId: string, checked: boolean) => {
-    if (checked) addToSelection(toolId);
-    else removeFromSelection(toolId);
+  const onApplyFilters = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setQ(draftQ);
+    setSearchMode(draftSearchMode);
+    setWarehouseFilter(draftWarehouseFilter);
+    setStatusFilter(draftStatusFilter);
+    setPage(1);
+  };
+
+  const onToggle = (tool: Tool, checked: boolean) => {
+    if (checked) {
+      addToSelection(tool.id);
+      setToastMessage(`${tool.name} を選択しました`);
+    } else {
+      removeFromSelection(tool.id);
+      setToastMessage(`${tool.name} の選択を解除しました`);
+    }
   };
 
   if (loading) return <main style={{ padding: 16 }}>loading...</main>;
@@ -136,48 +164,52 @@ export default function ToolsPage() {
     <main style={{ padding: 16 }}>
       <h1>ツール一覧</h1>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 1fr 1fr 1fr",
-          gap: 12,
-          marginTop: 12,
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>検索</div>
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ツール名 / 資産番号" />
+      <form onSubmit={onApplyFilters} style={{ marginTop: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 1fr 1fr 1fr",
+            gap: 12,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>検索</div>
+            <Input value={draftQ} onChange={(e) => setDraftQ(e.target.value)} placeholder="ツール名 / 資産番号" />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>検索モード</div>
+            <Select value={draftSearchMode} onChange={(e) => setDraftSearchMode(e.target.value as SearchMode)}>
+              <option value="partial">部分一致</option>
+              <option value="exact">完全一致</option>
+            </Select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫</div>
+            <Select value={draftWarehouseFilter} onChange={(e) => setDraftWarehouseFilter(e.target.value)}>
+              <option value="all">すべて</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>状態</div>
+            <Select value={draftStatusFilter} onChange={(e) => setDraftStatusFilter(e.target.value)}>
+              <option value="all">すべて</option>
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {statusLabel(s)}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>検索モード</div>
-          <Select value={searchMode} onChange={(e) => setSearchMode(e.target.value as SearchMode)}>
-            <option value="partial">部分一致</option>
-            <option value="exact">完全一致</option>
-          </Select>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <Button type="submit">検索</Button>
         </div>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫</div>
-          <Select value={warehouseFilter} onChange={(e) => setWarehouseFilter(e.target.value)}>
-            <option value="all">すべて</option>
-            {warehouses.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>状態</div>
-          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">すべて</option>
-            {statusOptions.map((s) => (
-              <option key={s} value={s}>
-                {statusLabel(s)}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </div>
+      </form>
 
       <div
         style={{
@@ -228,13 +260,17 @@ export default function ToolsPage() {
                 <Td>{tool.name}</Td>
                 <Td>{tool.assetNo}</Td>
                 <Td>{warehouseNameById.get(tool.warehouseId) ?? tool.warehouseId}</Td>
-                <Td>{statusLabel(tool.status)}</Td>
+                <Td>
+                  <span style={{ fontWeight: 700, color: statusColor(tool.status) }}>
+                    {statusLabel(tool.status)}
+                  </span>
+                </Td>
                 <Td>
                   <input
                     type="checkbox"
                     checked={checked}
                     disabled={disabled}
-                    onChange={(e) => onToggle(tool.id, e.target.checked)}
+                    onChange={(e) => onToggle(tool, e.target.checked)}
                   />
                 </Td>
               </tr>
@@ -242,6 +278,7 @@ export default function ToolsPage() {
           })}
         </tbody>
       </Table>
+      <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
     </main>
   );
 }

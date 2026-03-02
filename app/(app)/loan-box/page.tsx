@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Button from "../../../src/components/ui/Button";
 import Input from "../../../src/components/ui/Input";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
-import { statusLabel } from "../../../src/utils/format";
+import StatusBadge from "../../../src/components/ui/StatusBadge";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../src/utils/http";
 import { useConfirm } from "../../../src/components/ui/ConfirmProvider";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
@@ -26,6 +26,10 @@ type Warehouse = {
 };
 
 type DueOverrides = Record<string, string>;
+
+function isSelectable(status: string): boolean {
+  return status.trim().toLowerCase() === "available";
+}
 
 export default function LoanBoxPage() {
   const [tools, setTools] = useState<Tool[]>([]);
@@ -107,7 +111,7 @@ export default function LoanBoxPage() {
     });
   }, [dueOverrides, loanBoxTools, startDate, dueDate]);
 
-  const hasUnavailable = useMemo(() => loanBoxTools.some((tool) => tool.status !== "available"), [loanBoxTools]);
+  const hasUnavailable = useMemo(() => loanBoxTools.some((tool) => !isSelectable(tool.status)), [loanBoxTools]);
   const checkoutDisabled =
     submitting ||
     loanBoxTools.length === 0 ||
@@ -153,60 +157,94 @@ export default function LoanBoxPage() {
     }
   };
 
-  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
+  if (loading) return <main>loading...</main>;
 
   return (
-    <main style={{ padding: 16 }}>
+    <main>
       <h1>貸出ボックス</h1>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "end", marginTop: 12, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>開始日</div>
-          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, alignItems: "end" }}>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>開始日</div>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>返却期限</div>
+            <Input type="date" value={dueDate} min={startDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+          <div>
+            <Button type="button" disabled={checkoutDisabled} onClick={onCheckout}>
+              {submitting ? "送信中..." : "確認"}
+            </Button>
+          </div>
         </div>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>返却期限</div>
-          <Input type="date" value={dueDate} min={startDate} onChange={(e) => setDueDate(e.target.value)} />
-        </div>
-        <Button type="button" disabled={checkoutDisabled} onClick={onCheckout}>
-          {submitting ? "送信中..." : "確認"}
-        </Button>
-      </div>
+      </section>
 
-      {dueDate < startDate && <p style={{ color: "#b91c1c", marginTop: 12 }}>返却期限は開始日以降で指定してください</p>}
-      {invalidOverride && (
-        <p style={{ color: "#b91c1c", marginTop: 12 }}>期間上書き日付が期限範囲外です</p>
-      )}
+      {dueDate < startDate && <p style={{ color: "var(--danger)", marginTop: 12 }}>返却期限は開始日以降で指定してください</p>}
+      {invalidOverride && <p style={{ color: "var(--danger)", marginTop: 12 }}>期間上書き日付が期限範囲外です</p>}
       {hasUnavailable && (
-        <p style={{ color: "#b91c1c", marginTop: 12 }}>
+        <p style={{ color: "var(--danger)", marginTop: 12 }}>
           選択した工具のうち、貸出不可のものがあります。先にツールページで選択し直してください
         </p>
       )}
 
-      {err ? <p style={{ color: "#b91c1c", marginTop: 12 }}>error: {err}</p> : null}
+      {err ? <p style={{ color: "var(--danger)", marginTop: 12 }}>error: {err}</p> : null}
 
-      <div style={{ marginTop: 12 }}>選択件数: {loanBoxTools.length}</div>
+      <div style={{ marginTop: 12, fontWeight: 700 }}>選択件数: {loanBoxTools.length}</div>
       {loanBoxTools.length === 0 ? (
         <p style={{ marginTop: 12 }}>選択された工具がありません</p>
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>ツール名</Th>
-              <Th>資産番号</Th>
-              <Th>倉庫</Th>
-              <Th>状態</Th>
-              <Th>期限上書き</Th>
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          <div className="desktop-table">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>工具名</Th>
+                  <Th>工具ID</Th>
+                  <Th>倉庫</Th>
+                  <Th>状態</Th>
+                  <Th>期限上書き</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {loanBoxTools.map((tool) => (
+                  <tr key={tool.id}>
+                    <Td>{tool.name}</Td>
+                    <Td>{tool.assetNo}</Td>
+                    <Td>{warehouseNameById.get(tool.warehouseId) ?? "不明"}</Td>
+                    <Td>
+                      <StatusBadge status={tool.status} />
+                    </Td>
+                    <Td>
+                      <Input
+                        type="date"
+                        min={startDate}
+                        max={dueDate}
+                        value={dueOverrides[tool.id] || ""}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setDueOverrides((prev) => ({ ...prev, [tool.id]: value }));
+                        }}
+                      />
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+
+          <div className="mobile-cards">
             {loanBoxTools.map((tool) => (
-              <tr key={tool.id}>
-                <Td>{tool.name}</Td>
-                <Td>{tool.assetNo}</Td>
-                <Td>{warehouseNameById.get(tool.warehouseId) ?? tool.warehouseId}</Td>
-                <Td>{statusLabel(tool.status)}</Td>
-                <Td>
+              <article key={tool.id} className="card-surface" style={{ padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <strong>{tool.name}</strong>
+                  <StatusBadge status={tool.status} />
+                </div>
+                <div style={{ marginTop: 8, fontSize: 13 }}>工具ID: {tool.assetNo}</div>
+                <div style={{ marginTop: 4, fontSize: 13 }}>倉庫: {warehouseNameById.get(tool.warehouseId) ?? "不明"}</div>
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>期限上書き</div>
                   <Input
                     type="date"
                     min={startDate}
@@ -217,11 +255,11 @@ export default function LoanBoxPage() {
                       setDueOverrides((prev) => ({ ...prev, [tool.id]: value }));
                     }}
                   />
-                </Td>
-              </tr>
+                </div>
+              </article>
             ))}
-          </tbody>
-        </Table>
+          </div>
+        </>
       )}
     </main>
   );

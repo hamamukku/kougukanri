@@ -1,17 +1,17 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../../src/components/ui/Button";
 import Input from "../../../src/components/ui/Input";
 import Select from "../../../src/components/ui/Select";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
+import StatusBadge from "../../../src/components/ui/StatusBadge";
 import Toast from "../../../src/components/ui/Toast";
-import { statusLabel } from "../../../src/utils/format";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../src/utils/http";
 import { useLoanBox } from "../../../src/state/loanBoxStore";
 
-type ToolStatus = "available" | "loaned" | "repairing" | "lost";
+type ToolStatus = "available" | "loaned" | "repairing" | "lost" | "AVAILABLE" | "LOANED" | "RESERVED" | "BROKEN" | "REPAIR";
 
 type Tool = {
   id: string;
@@ -29,25 +29,20 @@ type Warehouse = {
 type SearchMode = "partial" | "exact";
 
 const PAGE_SIZE = 25;
-const statusColorByValue: Record<ToolStatus, string> = {
-  available: "#15803d",
-  loaned: "#ca8a04",
-  repairing: "#2563eb",
-  lost: "#dc2626",
-};
 
-const statusColor = (status: ToolStatus): string => statusColorByValue[status];
+function normalizeStatus(status: string): string {
+  return status.trim().toUpperCase();
+}
+
+function isSelectable(status: string): boolean {
+  return normalizeStatus(status) === "AVAILABLE";
+}
 
 export default function ToolsPage() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-
-  const [draftQ, setDraftQ] = useState("");
-  const [draftSearchMode, setDraftSearchMode] = useState<SearchMode>("partial");
-  const [draftWarehouseFilter, setDraftWarehouseFilter] = useState("all");
-  const [draftStatusFilter, setDraftStatusFilter] = useState("all");
 
   const [q, setQ] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("partial");
@@ -97,7 +92,7 @@ export default function ToolsPage() {
 
     const invalidIds = Array.from(selectedToolIds).filter((toolId) => {
       const target = tools.find((tool) => tool.id === toolId);
-      return !target || target.status !== "available";
+      return !target || !isSelectable(target.status);
     });
     if (invalidIds.length === 0) return;
     for (const id of invalidIds) {
@@ -105,13 +100,24 @@ export default function ToolsPage() {
     }
   }, [loading, tools, selectedToolIds, removeFromSelection]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [q, searchMode, warehouseFilter, statusFilter]);
+
   const warehouseNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const w of warehouses) map.set(w.id, w.name);
     return map;
   }, [warehouses]);
 
-  const statusOptions: ToolStatus[] = ["available", "loaned", "repairing", "lost"];
+  const statusOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const tool of tools) {
+      values.add(normalizeStatus(tool.status));
+    }
+    return Array.from(values).sort();
+  }, [tools]);
+
   const filteredTools = useMemo(() => {
     const keyword = q.trim().toLowerCase();
     return tools.filter((tool) => {
@@ -122,14 +128,10 @@ export default function ToolsPage() {
         if (searchMode === "partial" && !targetName.includes(keyword) && !targetAsset.includes(keyword)) return false;
       }
       if (warehouseFilter !== "all" && tool.warehouseId !== warehouseFilter) return false;
-      if (statusFilter !== "all" && tool.status !== statusFilter) return false;
+      if (statusFilter !== "all" && normalizeStatus(tool.status) !== statusFilter) return false;
       return true;
     });
   }, [tools, q, searchMode, warehouseFilter, statusFilter]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [q, searchMode, warehouseFilter, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTools.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -137,15 +139,6 @@ export default function ToolsPage() {
     const start = (safePage - 1) * PAGE_SIZE;
     return filteredTools.slice(start, start + PAGE_SIZE);
   }, [filteredTools, safePage]);
-
-  const onApplyFilters = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setQ(draftQ);
-    setSearchMode(draftSearchMode);
-    setWarehouseFilter(draftWarehouseFilter);
-    setStatusFilter(draftStatusFilter);
-    setPage(1);
-  };
 
   const onToggle = (tool: Tool, checked: boolean) => {
     if (checked) {
@@ -157,35 +150,34 @@ export default function ToolsPage() {
     }
   };
 
-  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><p style={{ color: "#b91c1c" }}>error: {err}</p></main>;
+  if (loading) return <main>loading...</main>;
+  if (err)
+    return (
+      <main>
+        <p style={{ color: "var(--danger)" }}>error: {err}</p>
+      </main>
+    );
 
   return (
-    <main style={{ padding: 16 }}>
-      <h1>ツール一覧</h1>
+    <main>
+      <h1>工具一覧</h1>
 
-      <form onSubmit={onApplyFilters} style={{ marginTop: 12 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr 1fr",
-            gap: 12,
-          }}
-        >
+      <section className="sticky-tools-filter">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>検索</div>
-            <Input value={draftQ} onChange={(e) => setDraftQ(e.target.value)} placeholder="ツール名 / 資産番号" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="工具名 / 工具ID" />
           </div>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>検索モード</div>
-            <Select value={draftSearchMode} onChange={(e) => setDraftSearchMode(e.target.value as SearchMode)}>
+            <Select value={searchMode} onChange={(e) => setSearchMode(e.target.value as SearchMode)}>
               <option value="partial">部分一致</option>
               <option value="exact">完全一致</option>
             </Select>
           </div>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫</div>
-            <Select value={draftWarehouseFilter} onChange={(e) => setDraftWarehouseFilter(e.target.value)}>
+            <Select value={warehouseFilter} onChange={(e) => setWarehouseFilter(e.target.value)}>
               <option value="all">すべて</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
@@ -196,88 +188,103 @@ export default function ToolsPage() {
           </div>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>状態</div>
-            <Select value={draftStatusFilter} onChange={(e) => setDraftStatusFilter(e.target.value)}>
+            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="all">すべて</option>
-              {statusOptions.map((s) => (
-                <option key={s} value={s}>
-                  {statusLabel(s)}
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
                 </option>
               ))}
             </Select>
           </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-          <Button type="submit">検索</Button>
+
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <div>表示件数: {filteredTools.length}</div>
+          <div style={{ fontWeight: 700 }}>選択中: {selectedToolIds.size}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Button type="button" variant="ghost" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              前へ
+            </Button>
+            <span>
+              {safePage} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={safePage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              次へ
+            </Button>
+          </div>
         </div>
-      </form>
+      </section>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: 12,
-        }}
-      >
-        <div>表示件数: {filteredTools.length}</div>
-        <div style={{ fontWeight: 700 }}>貸出ボックス（選択数）: {selectedToolIds.size}</div>
+      <div className="desktop-table" style={{ marginTop: 12 }}>
+        <Table>
+          <thead>
+            <tr>
+              <Th>工具名</Th>
+              <Th>工具ID</Th>
+              <Th>倉庫</Th>
+              <Th>状態</Th>
+              <Th>選択</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageTools.map((tool) => {
+              const disabled = !isSelectable(tool.status);
+              const checked = hasInSelection(tool.id);
+              return (
+                <tr key={tool.id}>
+                  <Td>{tool.name}</Td>
+                  <Td>{tool.assetNo}</Td>
+                  <Td>{warehouseNameById.get(tool.warehouseId) ?? "不明"}</Td>
+                  <Td>
+                    <StatusBadge status={tool.status} />
+                  </Td>
+                  <Td>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={(e) => onToggle(tool, e.target.checked)}
+                    />
+                  </Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </Table>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 8 }}>
-        <Button type="button" variant="ghost" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-          前へ
-        </Button>
-        <span>
-          {safePage} / {totalPages}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={safePage >= totalPages}
-          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-        >
-          次へ
-        </Button>
+      <div className="mobile-cards">
+        {pageTools.map((tool) => {
+          const disabled = !isSelectable(tool.status);
+          const checked = hasInSelection(tool.id);
+          return (
+            <article key={tool.id} className="card-surface" style={{ padding: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <strong>{tool.name}</strong>
+                <StatusBadge status={tool.status} />
+              </div>
+              <div style={{ marginTop: 8, fontSize: 13 }}>工具ID: {tool.assetNo}</div>
+              <div style={{ marginTop: 4, fontSize: 13 }}>倉庫: {warehouseNameById.get(tool.warehouseId) ?? "不明"}</div>
+              <label style={{ marginTop: 8, display: "inline-flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={(e) => onToggle(tool, e.target.checked)}
+                />
+                貸出ボックスに追加
+              </label>
+            </article>
+          );
+        })}
       </div>
 
-      <div style={{ marginTop: 12 }} />
-      <Table>
-        <thead>
-          <tr>
-            <Th>工具名</Th>
-            <Th>資産番号</Th>
-            <Th>倉庫</Th>
-            <Th>状態</Th>
-            <Th>操作</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {pageTools.map((tool) => {
-            const disabled = tool.status !== "available";
-            const checked = hasInSelection(tool.id);
-            return (
-              <tr key={tool.id}>
-                <Td>{tool.name}</Td>
-                <Td>{tool.assetNo}</Td>
-                <Td>{warehouseNameById.get(tool.warehouseId) ?? tool.warehouseId}</Td>
-                <Td>
-                  <span style={{ fontWeight: 700, color: statusColor(tool.status) }}>
-                    {statusLabel(tool.status)}
-                  </span>
-                </Td>
-                <Td>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={disabled}
-                    onChange={(e) => onToggle(tool, e.target.checked)}
-                  />
-                </Td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </Table>
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
     </main>
   );

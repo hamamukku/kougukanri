@@ -1,0 +1,4 @@
+ALTER TABLE tools
+ALTER COLUMN asset_no DROP DEFAULT;
+
+DROP SEQUENCE IF EXISTS tool_asset_no_seq;

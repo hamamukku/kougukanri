@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Button from "../../src/components/ui/Button";
 import Input from "../../src/components/ui/Input";
+import Select from "../../src/components/ui/Select";
 import Toast from "../../src/components/ui/Toast";
 import { apiFetchJson, getHttpErrorMessage } from "../../src/utils/http";
 
@@ -11,14 +12,34 @@ type SignupRequestResponse = {
   ok: boolean;
 };
 
+type Department = {
+  id: string;
+  name: string;
+};
+
 export default function SignupRequestPage() {
   const [department, setDepartment] = useState("");
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const items = await apiFetchJson<Department[]>("/api/departments");
+        setDepartments(items);
+        if (items.length > 0) {
+          setDepartment((prev) => prev || items[0].name);
+        }
+      } catch (err: unknown) {
+        setError(getHttpErrorMessage(err));
+      }
+    })();
+  }, []);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -71,11 +92,13 @@ export default function SignupRequestPage() {
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>部署名</div>
-            <Input
-              value={department}
-              onChange={(event) => setDepartment(event.target.value)}
-              placeholder="engineering"
-            />
+            <Select value={department} onChange={(event) => setDepartment(event.target.value)}>
+              {departments.map((item) => (
+                <option key={item.id} value={item.name}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
           </div>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>ユーザー名</div>

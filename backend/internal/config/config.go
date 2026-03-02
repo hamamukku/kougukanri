@@ -63,7 +63,7 @@ func Load() (Config, error) {
 		SeedAdminUsername:   os.Getenv("SEED_ADMIN_USERNAME"),
 		SeedAdminEmail:      os.Getenv("SEED_ADMIN_EMAIL"),
 		SeedAdminPassword:   os.Getenv("SEED_ADMIN_PASSWORD"),
-		SeedAdminDepartment: getEnv("SEED_ADMIN_DEPARTMENT", "system"),
+		SeedAdminDepartment: getEnv("SEED_ADMIN_DEPARTMENT", "仮会社"),
 	}
 
 	if cfg.DBURL == "" {

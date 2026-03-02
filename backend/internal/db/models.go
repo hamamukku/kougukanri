@@ -30,6 +30,13 @@ type UserSafe struct {
 	UpdatedAt  time.Time
 }
 
+type Department struct {
+	ID        uuid.UUID
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type SignupRequest struct {
 	ID             uuid.UUID
 	Department     string

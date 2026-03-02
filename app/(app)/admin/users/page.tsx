@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
 import Toast from "../../../../src/components/ui/Toast";
+import ActionMenu from "../../../../src/components/ui/ActionMenu";
 import { useConfirm } from "../../../../src/components/ui/ConfirmProvider";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 
@@ -206,106 +207,109 @@ export default function AdminUsersPage() {
     }
   };
 
-  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><p style={{ color: "#b91c1c" }}>error: {err}</p></main>;
+  if (loading) return <main>loading...</main>;
+  if (err)
+    return (
+      <main>
+        <p style={{ color: "var(--danger)" }}>error: {err}</p>
+      </main>
+    );
 
   return (
-    <main style={{ padding: 16 }}>
+    <main>
       <h1>ユーザー管理</h1>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" />
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" />
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as "user" | "admin")}
-            style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
-          >
-            <option value="user">user</option>
-            <option value="admin">admin</option>
-          </select>
-          <Button type="button" onClick={onAdd} disabled={submitting.has("add")}>
-            追加
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, flex: 1 }}>
+            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" />
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" />
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as "user" | "admin")}
+              style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", padding: "0 10px" }}
+            >
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+            <Button type="button" onClick={onAdd} disabled={submitting.has("add")}>
+              追加
+            </Button>
+          </div>
+
+          <Button type="button" variant="ghost" onClick={onResetData} disabled={submitting.has("reset")}>
+            データリセット
           </Button>
         </div>
+      </section>
 
-        <Button type="button" variant="ghost" onClick={onResetData} disabled={submitting.has("reset")}>
-          データリセット
-        </Button>
-      </div>
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ユーザー名</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>メール</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ロール</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((user) => {
+              const isEditing = editingId === user.id;
+              const isBusy = submitting.has(user.id);
+              return (
+                <tr key={user.id}>
+                  <td style={{ padding: "8px 0" }}>
+                    {isEditing ? (
+                      <Input value={editingUsername} onChange={(e) => setEditingUsername(e.target.value)} />
+                    ) : (
+                      user.username
+                    )}
+                  </td>
+                  <td style={{ padding: "8px 0" }}>
+                    {isEditing ? <Input value={editingEmail} onChange={(e) => setEditingEmail(e.target.value)} /> : user.email}
+                  </td>
+                  <td style={{ padding: "8px 0" }}>
+                    {isEditing ? (
+                      <select
+                        value={editingRole}
+                        onChange={(e) => setEditingRole(e.target.value as "user" | "admin")}
+                        style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
+                      >
+                        <option value="user">user</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    ) : (
+                      user.role
+                    )}
+                  </td>
+                  <td style={{ padding: "8px 0" }}>
+                    {isEditing ? (
+                      <ActionMenu
+                        disabled={isBusy}
+                        items={[
+                          { key: "save", label: "保存", onClick: () => void onSaveEdit(user.id), disabled: isBusy },
+                          { key: "cancel", label: "キャンセル", onClick: onCancelEdit, disabled: isBusy },
+                        ]}
+                      />
+                    ) : (
+                      <ActionMenu
+                        disabled={isBusy}
+                        items={[
+                          { key: "edit", label: "編集", onClick: () => onStartEdit(user), disabled: isBusy },
+                          { key: "delete", label: "削除", onClick: () => void onDelete(user.id), danger: true, disabled: isBusy },
+                        ]}
+                      />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ユーザー名</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>メール</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ロール</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => {
-            const isEditing = editingId === user.id;
-            const isBusy = submitting.has(user.id);
-            return (
-              <tr key={user.id}>
-                <td style={{ padding: "8px 0" }}>
-                  {isEditing ? (
-                    <Input value={editingUsername} onChange={(e) => setEditingUsername(e.target.value)} />
-                  ) : (
-                    user.username
-                  )}
-                </td>
-                <td style={{ padding: "8px 0" }}>
-                  {isEditing ? (
-                    <Input value={editingEmail} onChange={(e) => setEditingEmail(e.target.value)} />
-                  ) : (
-                    user.email
-                  )}
-                </td>
-                <td style={{ padding: "8px 0" }}>
-                  {isEditing ? (
-                    <select
-                      value={editingRole}
-                      onChange={(e) => setEditingRole(e.target.value as "user" | "admin")}
-                      style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
-                    >
-                      <option value="user">user</option>
-                      <option value="admin">admin</option>
-                    </select>
-                  ) : (
-                    user.role
-                  )}
-                </td>
-                <td style={{ padding: "8px 0" }}>
-                  {isEditing ? (
-                    <>
-                      <Button type="button" onClick={() => onSaveEdit(user.id)} disabled={isBusy}>
-                        保存
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={onCancelEdit}>
-                        キャンセル
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button type="button" onClick={() => onStartEdit(user)}>
-                        編集
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={() => onDelete(user.id)} disabled={isBusy}>
-                        削除
-                      </Button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      <section style={{ marginTop: 24 }}>
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
         <h2 style={{ margin: "0 0 12px", fontSize: 18 }}>申請待ちユーザー</h2>
         {pendingUsers.length === 0 ? (
           <p style={{ color: "#64748b" }}>申請待ちなし</p>
@@ -328,11 +332,7 @@ export default function AdminUsersPage() {
                     <td style={{ padding: "8px 0" }}>{pendingUser.email}</td>
                     <td style={{ padding: "8px 0" }}>{pendingUser.requestedAt}</td>
                     <td style={{ padding: "8px 0" }}>
-                      <Button
-                        type="button"
-                        onClick={() => onApproveRequest(pendingUser.id)}
-                        disabled={isBusy}
-                      >
+                      <Button type="button" onClick={() => onApproveRequest(pendingUser.id)} disabled={isBusy}>
                         承認
                       </Button>
                     </td>

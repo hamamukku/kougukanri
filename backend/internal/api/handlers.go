@@ -39,6 +39,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 
 	authed.GET("/auth/me", h.me)
 	authed.GET("/warehouses", h.listWarehouses)
+	authed.GET("/departments", h.listDepartments)
 	authed.GET("/tools", h.listTools)
 	authed.GET("/tools/by-tag/:tagId", h.getToolByTag)
 
@@ -55,8 +56,11 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	admin.GET("/tools", h.listAdminTools)
 	admin.GET("/audit-logs", h.listAuditLogs)
 	admin.POST("/tools", h.createTool)
+	admin.POST("/tools/bulk", h.createToolsBulk)
 	admin.DELETE("/tools/:toolId", h.deleteTool)
 	admin.PATCH("/tools/:toolId", h.patchTool)
+	admin.POST("/departments", h.createDepartment)
+	admin.DELETE("/departments/:departmentId", h.deleteDepartment)
 	admin.GET("/returns/requests", h.listReturnRequests)
 	admin.POST("/returns/approve-box", h.approveReturnBox)
 	admin.POST("/returns/approve-items", h.approveReturnItems)
@@ -213,6 +217,23 @@ func (h *Handler) listWarehouses(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func (h *Handler) listDepartments(c *gin.Context) {
+	items, err := h.svc.ListDepartments(c.Request.Context())
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	resp := make([]gin.H, 0, len(items))
+	for _, department := range items {
+		resp = append(resp, gin.H{
+			"id":   department.ID,
+			"name": department.Name,
+		})
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 type createWarehouseRequest struct {
 	Name string `json:"name"`
 }
@@ -240,6 +261,44 @@ func (h *Handler) deleteWarehouse(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteWarehouse(c.Request.Context(), user.ID, warehouseID); err != nil {
+		WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+type createDepartmentRequest struct {
+	Name string `json:"name"`
+}
+
+func (h *Handler) createDepartment(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	var req createDepartmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
+		return
+	}
+
+	department, err := h.svc.CreateDepartment(c.Request.Context(), user.ID, req.Name)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"id":   department.ID,
+		"name": department.Name,
+	})
+}
+
+func (h *Handler) deleteDepartment(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	departmentID, err := uuid.Parse(strings.TrimSpace(c.Param("departmentId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("departmentId is invalid", nil))
+		return
+	}
+	if err := h.svc.DeleteDepartment(c.Request.Context(), user.ID, departmentID); err != nil {
 		WriteError(c, err)
 		return
 	}
@@ -437,6 +496,79 @@ func (h *Handler) createTool(c *gin.Context) {
 		"name":        tool.Name,
 		"warehouseId": tool.WarehouseID,
 		"baseStatus":  tool.BaseStatus,
+	})
+}
+
+type createToolBulkItemRequest struct {
+	Name        string  `json:"name"`
+	WarehouseID string  `json:"warehouseId"`
+	BaseStatus  string  `json:"baseStatus"`
+	TagID       *string `json:"tagId"`
+}
+
+type createToolsBulkRequest struct {
+	Tools []createToolBulkItemRequest `json:"tools"`
+}
+
+func (h *Handler) createToolsBulk(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	var req createToolsBulkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
+		return
+	}
+
+	if len(req.Tools) == 0 {
+		WriteError(c, apierr.InvalidRequest("tools is required", nil))
+		return
+	}
+
+	rowErrors := make([]app.BulkToolRowError, 0)
+	inputs := make([]app.CreateToolBulkInput, len(req.Tools))
+	for i, item := range req.Tools {
+		inputs[i] = app.CreateToolBulkInput{
+			Name:       item.Name,
+			BaseStatus: item.BaseStatus,
+			TagID:      item.TagID,
+		}
+		parsedWarehouseID, err := uuid.Parse(strings.TrimSpace(item.WarehouseID))
+		if err != nil {
+			rowErrors = append(rowErrors, app.BulkToolRowError{
+				Row:     i + 1,
+				Field:   "warehouseId",
+				Message: "warehouseId is invalid",
+			})
+			continue
+		}
+		inputs[i].WarehouseID = parsedWarehouseID
+	}
+	if len(rowErrors) > 0 {
+		WriteError(c, apierr.InvalidRequest("invalid tools payload", map[string]any{
+			"rowErrors": rowErrors,
+		}))
+		return
+	}
+
+	result, err := h.svc.CreateToolsBulk(c.Request.Context(), user.ID, inputs)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	respItems := make([]gin.H, 0, len(result.Tools))
+	for _, tool := range result.Tools {
+		respItems = append(respItems, gin.H{
+			"id":          tool.ID,
+			"assetNo":     tool.AssetNo,
+			"tagId":       nullableNullString(tool.TagID),
+			"name":        tool.Name,
+			"warehouseId": tool.WarehouseID,
+			"baseStatus":  tool.BaseStatus,
+		})
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"items": respItems,
 	})
 }
 

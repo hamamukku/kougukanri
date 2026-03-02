@@ -1,8 +1,9 @@
-﻿import { cookies } from "next/headers";
+import { cookies } from "next/headers";
 import LogoutButton from "./logout-button";
 import { LoanBoxProvider } from "../../src/state/loanBoxStore";
 import SideNav from "./side-nav";
 import AuthMeSync from "./auth-me-sync";
+import LoanBoxFab from "./loan-box-fab";
 
 const AUTH_ROLE_COOKIE = "role";
 const AUTH_USERNAME_COOKIE = "username";
@@ -26,38 +27,50 @@ export default async function AppShellLayout({
   })();
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc", color: "#0f172a" }}>
+    <div style={{ minHeight: "100vh", background: "var(--background)", color: "var(--foreground)" }}>
       <header
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           padding: "12px 16px",
-          borderBottom: "1px solid #e2e8f0",
-          background: "#ffffff",
+          borderBottom: "1px solid var(--border)",
+          background: "var(--surface)",
+          position: "sticky",
+          top: 0,
+          zIndex: 60,
         }}
       >
-        <strong>工具貸出管理</strong>
-        <span>{username}</span>
-        <LogoutButton />
+        <strong style={{ letterSpacing: 1 }}>工具貸出管理</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span>{username}</span>
+          <LogoutButton />
+        </div>
       </header>
 
       <LoanBoxProvider>
         <AuthMeSync />
-        <div style={{ display: "flex", alignItems: "stretch" }}>
+        <div className="layout-with-nav" style={{ display: "flex", alignItems: "stretch" }}>
           <aside
+            className="layout-side-nav"
             style={{
               width: 240,
               minHeight: "calc(100vh - 53px)",
-              borderRight: "1px solid #e2e8f0",
-              background: "#ffffff",
+              borderRight: "1px solid var(--border)",
+              background: "var(--surface)",
               padding: "12px",
+              position: "sticky",
+              top: 54,
+              alignSelf: "flex-start",
             }}
           >
             <SideNav role={role === "admin" ? "admin" : "user"} />
           </aside>
-          <main style={{ flex: 1, padding: 16 }}>{children}</main>
+          <main className="app-main" style={{ flex: 1 }}>
+            {children}
+          </main>
         </div>
+        <LoanBoxFab />
       </LoanBoxProvider>
     </div>
   );

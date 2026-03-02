@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
+import ActionMenu from "../../../../src/components/ui/ActionMenu";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 import { clearAuthSession } from "../../../../src/utils/auth";
 
@@ -97,26 +98,26 @@ export default function AdminWarehousesPage() {
     }
   };
 
-  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
+  if (loading) return <main>loading...</main>;
   if (err)
     return (
-      <main style={{ padding: 16 }}>
-        <p style={{ color: "#b91c1c" }}>error: {err}</p>
+      <main>
+        <p style={{ color: "var(--danger)" }}>error: {err}</p>
       </main>
     );
 
   return (
-    <main style={{ padding: 16 }}>
+    <main>
       <h1>倉庫管理</h1>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+      <div className="card-surface" style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", marginBottom: 12, padding: 12 }}>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="倉庫名" />
         <Button type="button" onClick={onAdd} disabled={submitting}>
           {submitting ? "作成中..." : "作成"}
         </Button>
       </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <table className="card-surface" style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
             <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ID</th>
@@ -130,15 +131,18 @@ export default function AdminWarehousesPage() {
               <td style={{ padding: "8px 0" }}>{warehouse.id}</td>
               <td style={{ padding: "8px 0" }}>{warehouse.name}</td>
               <td style={{ padding: "8px 0" }}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => onDelete(warehouse)}
+                <ActionMenu
                   disabled={deletingId !== null}
-                  style={{ borderColor: "#dc2626", color: "#dc2626" }}
-                >
-                  {deletingId === warehouse.id ? "削除中..." : "削除"}
-                </Button>
+                  items={[
+                    {
+                      key: "delete",
+                      label: deletingId === warehouse.id ? "削除中..." : "削除",
+                      onClick: () => void onDelete(warehouse),
+                      danger: true,
+                      disabled: deletingId !== null,
+                    },
+                  ]}
+                />
               </td>
             </tr>
           ))}

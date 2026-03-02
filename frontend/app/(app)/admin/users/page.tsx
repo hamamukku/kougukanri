@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
+import ActionMenu from "../../../../src/components/ui/ActionMenu";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 import { clearAuthSession } from "../../../../src/utils/auth";
 
@@ -39,6 +40,11 @@ type ApproveSignupResponse = {
   user: UserItem;
 };
 
+type Department = {
+  id: string;
+  name: string;
+};
+
 const USER_PAGE_SIZE = 10;
 
 function formatDateTime(value: string | undefined): string {
@@ -55,6 +61,11 @@ export default function AdminUsersPage() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("user");
 
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [newDepartmentName, setNewDepartmentName] = useState("");
+  const [savingDepartment, setSavingDepartment] = useState(false);
+  const [deletingDepartmentId, setDeletingDepartmentId] = useState<string | null>(null);
+
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [userPage, setUserPage] = useState(1);
@@ -69,9 +80,7 @@ export default function AdminUsersPage() {
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
 
-  const totalUserPages = useMemo(() => {
-    return Math.max(1, Math.ceil(userTotal / USER_PAGE_SIZE));
-  }, [userTotal]);
+  const totalUserPages = useMemo(() => Math.max(1, Math.ceil(userTotal / USER_PAGE_SIZE)), [userTotal]);
 
   const handleApiError = useCallback(
     (error: unknown): string | null => {
@@ -91,14 +100,28 @@ export default function AdminUsersPage() {
     [router],
   );
 
+  const loadDepartments = useCallback(async () => {
+    try {
+      const items = await apiFetchJson<Department[]>("/api/departments");
+      setDepartments(items);
+      if (!department && items.length > 0) {
+        setDepartment(items[0].name);
+      }
+      if (department && !items.some((item) => item.name === department)) {
+        setDepartment(items[0]?.name ?? "");
+      }
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    }
+  }, [department, handleApiError]);
+
   const loadUsers = useCallback(
     async (page: number) => {
       setLoadingUsers(true);
 
       try {
-        const response = await apiFetchJson<UsersListResponse>(
-          `/api/admin/users?page=${page}&pageSize=${USER_PAGE_SIZE}`,
-        );
+        const response = await apiFetchJson<UsersListResponse>(`/api/admin/users?page=${page}&pageSize=${USER_PAGE_SIZE}`);
 
         if (response.items.length === 0 && response.total > 0 && page > 1) {
           setUserPage(page - 1);
@@ -133,6 +156,10 @@ export default function AdminUsersPage() {
   }, [handleApiError]);
 
   useEffect(() => {
+    void loadDepartments();
+  }, [loadDepartments]);
+
+  useEffect(() => {
     void loadUsers(userPage);
   }, [loadUsers, userPage]);
 
@@ -142,7 +169,7 @@ export default function AdminUsersPage() {
 
   const onCreate = async () => {
     if (submitting) return;
-    if (!department.trim() || !username.trim() || !email.trim() || !password) return;
+    if (!department || !username.trim() || !email.trim() || !password) return;
 
     setSubmitting(true);
     setErr(null);
@@ -152,7 +179,7 @@ export default function AdminUsersPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          department: department.trim(),
+          department,
           username: username.trim(),
           email: email.trim(),
           password,
@@ -160,7 +187,6 @@ export default function AdminUsersPage() {
         }),
       });
 
-      setDepartment("");
       setUsername("");
       setEmail("");
       setPassword("");
@@ -228,16 +254,71 @@ export default function AdminUsersPage() {
     }
   };
 
-  return (
-    <main style={{ padding: 16 }}>
-      <h1>ユーザー管理</h1>
+  const onAddDepartment = async () => {
+    if (!newDepartmentName.trim() || savingDepartment) return;
+    setSavingDepartment(true);
+    setErr(null);
+    try {
+      const created = await apiFetchJson<Department>("/api/admin/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newDepartmentName.trim() }),
+      });
+      setDepartments((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewDepartmentName("");
+      if (!department) setDepartment(created.name);
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    } finally {
+      setSavingDepartment(false);
+    }
+  };
 
-      <section style={{ marginTop: 12 }}>
+  const onDeleteDepartment = async (target: Department) => {
+    if (deletingDepartmentId || savingDepartment) return;
+    const confirmed = window.confirm(`部署「${target.name}」を削除します。よろしいですか？`);
+    if (!confirmed) return;
+
+    setDeletingDepartmentId(target.id);
+    setErr(null);
+    try {
+      await apiFetchJson<{ ok: boolean }>(`/api/admin/departments/${target.id}`, {
+        method: "DELETE",
+      });
+      setDepartments((prev) => prev.filter((item) => item.id !== target.id));
+      if (department === target.name) {
+        const remaining = departments.filter((item) => item.id !== target.id);
+        setDepartment(remaining[0]?.name ?? "");
+      }
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    } finally {
+      setDeletingDepartmentId(null);
+    }
+  };
+
+  return (
+    <main>
+      <h1>ユーザー・部署管理</h1>
+
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
         <h2 style={{ marginBottom: 8 }}>ユーザー作成</h2>
-        <div style={{ display: "grid", gap: 8, maxWidth: 560 }}>
+        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>部署</div>
-            <Input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="engineering" />
+            <select
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", padding: "0 10px", width: "100%" }}
+            >
+              {departments.map((item) => (
+                <option key={item.id} value={item.name}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>ユーザー名</div>
@@ -256,27 +337,61 @@ export default function AdminUsersPage() {
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
-              style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", padding: "0 10px" }}
+              style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", padding: "0 10px", width: "100%" }}
             >
               <option value="user">user</option>
               <option value="admin">admin</option>
             </select>
           </div>
-          <div>
-            <Button
-              type="button"
-              onClick={onCreate}
-              disabled={submitting || !department.trim() || !username.trim() || !email.trim() || !password}
-            >
+          <div style={{ display: "flex", alignItems: "end" }}>
+            <Button type="button" onClick={onCreate} disabled={submitting || !department || !username.trim() || !email.trim() || !password}>
               {submitting ? "作成中..." : "ユーザーを作成"}
             </Button>
           </div>
         </div>
       </section>
 
-      {err ? <p style={{ color: "#b91c1c", marginTop: 12 }}>error: {err}</p> : null}
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
+        <h2 style={{ marginBottom: 8 }}>部署管理</h2>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Input value={newDepartmentName} onChange={(e) => setNewDepartmentName(e.target.value)} placeholder="部署名" />
+          <Button type="button" onClick={onAddDepartment} disabled={savingDepartment || !newDepartmentName.trim()}>
+            {savingDepartment ? "追加中..." : "部署を追加"}
+          </Button>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>部署名</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {departments.map((item) => (
+                <tr key={item.id}>
+                  <td style={{ padding: "8px 0" }}>{item.name}</td>
+                  <td style={{ padding: "8px 0" }}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={deletingDepartmentId !== null}
+                      onClick={() => void onDeleteDepartment(item)}
+                      style={{ borderColor: "#dc2626", color: "#b91c1c" }}
+                    >
+                      {deletingDepartmentId === item.id ? "削除中..." : "削除"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <section style={{ marginTop: 20 }}>
+      {err ? <p style={{ color: "var(--danger)", marginTop: 12 }}>error: {err}</p> : null}
+
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
         <h2 style={{ marginBottom: 8 }}>ユーザー一覧</h2>
         {loadingUsers ? (
           <p>読み込み中...</p>
@@ -306,15 +421,18 @@ export default function AdminUsersPage() {
                     <td style={{ padding: "8px 0" }}>{item.role}</td>
                     <td style={{ padding: "8px 0" }}>{formatDateTime(item.createdAt)}</td>
                     <td style={{ padding: "8px 0" }}>
-                      <Button
-                        type="button"
-                        variant="ghost"
+                      <ActionMenu
                         disabled={deletingId !== null}
-                        onClick={() => onDelete(item)}
-                        style={{ borderColor: "#dc2626", color: "#dc2626" }}
-                      >
-                        {deletingId === item.id ? "削除中..." : "削除"}
-                      </Button>
+                        items={[
+                          {
+                            key: "delete",
+                            label: deletingId === item.id ? "削除中..." : "削除",
+                            onClick: () => void onDelete(item),
+                            danger: true,
+                            disabled: deletingId !== null,
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -341,7 +459,7 @@ export default function AdminUsersPage() {
         )}
       </section>
 
-      <section style={{ marginTop: 28 }}>
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
         <h2 style={{ marginBottom: 8 }}>申請待ち一覧</h2>
         {loadingPending ? (
           <p>読み込み中...</p>
@@ -351,24 +469,12 @@ export default function AdminUsersPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
-                  部署
-                </th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
-                  ユーザー名
-                </th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
-                  メール
-                </th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
-                  申請日時
-                </th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
-                  ステータス
-                </th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>
-                  操作
-                </th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>部署</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ユーザー名</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>メール</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>申請日時</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ステータス</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
               </tr>
             </thead>
             <tbody>

@@ -1,16 +1,18 @@
 -- name: CreateTool :one
 INSERT INTO tools (
     asset_no,
+    tag_id,
     name,
     warehouse_id,
     base_status,
     created_at,
     updated_at
 ) VALUES (
-    $1,
+    COALESCE(NULLIF($1, ''), 'T-' || LPAD(nextval('tool_asset_no_seq')::text, 6, '0')),
     $2,
     $3,
     $4,
+    $5,
     NOW(),
     NOW()
 )

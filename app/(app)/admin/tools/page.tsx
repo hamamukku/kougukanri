@@ -1,9 +1,10 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
-import { statusLabel } from "../../../../src/utils/format";
+import StatusBadge from "../../../../src/components/ui/StatusBadge";
+import ActionMenu from "../../../../src/components/ui/ActionMenu";
 import { Table, Td, Th } from "../../../../src/components/ui/Table";
 import { useConfirm } from "../../../../src/components/ui/ConfirmProvider";
 import { HttpError, apiFetchJson } from "../../../../src/utils/http";
@@ -92,7 +93,7 @@ export default function AdminToolsPage() {
   }, [warehouses]);
 
   const onAdd = async () => {
-    if (!name.trim() || !warehouseId) return;
+    if (!name.trim() || !assetNo.trim() || !warehouseId) return;
     if (submitting.has("add")) return;
     setSubmitting((prev) => new Set(prev).add("add"));
     try {
@@ -194,156 +195,156 @@ export default function AdminToolsPage() {
     }
   };
 
-  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><p style={{ color: "#b91c1c" }}>error: {err}</p></main>;
+  if (loading) return <main>loading...</main>;
+  if (err)
+    return (
+      <main>
+        <p style={{ color: "var(--danger)" }}>error: {err}</p>
+      </main>
+    );
 
   return (
-    <main style={{ padding: 16 }}>
+    <main>
       <h1>工具管理</h1>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 8, alignItems: "end" }}>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>工具名</div>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="工具名" />
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, alignItems: "end" }}>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>工具名</div>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="工具名" />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>工具ID</div>
+            <Input value={assetNo} onChange={(e) => setAssetNo(e.target.value)} placeholder="A-0001" />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫</div>
+            <select
+              value={warehouseId}
+              onChange={(e) => setWarehouseId(e.target.value)}
+              style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", width: "100%" }}
+            >
+              {warehouses.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>状態</div>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as ToolStatus)}
+              style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", width: "100%" }}
+            >
+              <option value="available">貸出可</option>
+              <option value="loaned">貸出中</option>
+              <option value="repairing">修理中</option>
+              <option value="lost">紛失</option>
+            </select>
+          </div>
+          <div>
+            <Button type="button" onClick={onAdd} disabled={submitting.has("add") || !warehouses.length}>
+              追加
+            </Button>
+          </div>
         </div>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>資産番号</div>
-          <Input value={assetNo} onChange={(e) => setAssetNo(e.target.value)} placeholder="A-0001" />
-        </div>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫</div>
-          <select
-            value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
-            style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", width: "100%" }}
-          >
-            {warehouses.map((warehouse) => (
-              <option key={warehouse.id} value={warehouse.id}>
-                {warehouse.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>状態</div>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as ToolStatus)}
-            style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", width: "100%" }}
-          >
-            <option value="available">貸出可</option>
-            <option value="loaned">貸出中</option>
-            <option value="repairing">修理中</option>
-            <option value="lost">紛失</option>
-          </select>
-        </div>
-        <div>
-          <Button type="button" onClick={onAdd} disabled={submitting.has("add") || !warehouses.length}>
-            追加
-          </Button>
-        </div>
-      </div>
+      </section>
 
-      <div style={{ marginTop: 12 }} />
-      <Table>
-        <thead>
-          <tr>
-            <Th>ツール名</Th>
-            <Th>資産番号</Th>
-            <Th>倉庫</Th>
-            <Th>状態</Th>
-            <Th>操作</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {tools.map((tool) => {
-            const isEditing = editingId === tool.id;
-            const isBusy = submitting.has(tool.id);
-            return (
-              <tr key={tool.id}>
-                <Td>
-                  {isEditing ? (
-                    <Input
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      disabled={isBusy}
-                    />
-                  ) : (
-                    tool.name
-                  )}
-                </Td>
-                <Td>
-                  {isEditing ? (
-                    <Input
-                      value={editingAssetNo}
-                      onChange={(e) => setEditingAssetNo(e.target.value)}
-                      disabled={isBusy}
-                    />
-                  ) : (
-                    tool.assetNo
-                  )}
-                </Td>
-                <Td>
-                  {isEditing ? (
-                    <select
-                      value={editingWarehouseId}
-                      onChange={(e) => setEditingWarehouseId(e.target.value)}
-                      disabled={isBusy}
-                      style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
-                    >
-                      {warehouses.map((warehouse) => (
-                        <option key={warehouse.id} value={warehouse.id}>
-                          {warehouse.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    mapWarehouse.get(tool.warehouseId) || tool.warehouseId
-                  )}
-                </Td>
-                <Td>
-                  {isEditing ? (
-                    <select
-                      value={editingStatus}
-                      onChange={(e) => setEditingStatus(e.target.value as ToolStatus)}
-                      disabled={isBusy}
-                      style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
-                    >
-                      <option value="available">貸出可</option>
-                      <option value="loaned">貸出中</option>
-                      <option value="repairing">修理中</option>
-                      <option value="lost">紛失</option>
-                    </select>
-                  ) : (
-                    statusLabel(tool.status)
-                  )}
-                </Td>
-                <Td>
-                  {isEditing ? (
-                    <>
-                      <Button type="button" onClick={() => onSave(tool.id)} disabled={isBusy}>
-                        保存
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={onCancelEdit} disabled={isBusy}>
-                        キャンセル
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button type="button" onClick={() => onStartEdit(tool)} disabled={isBusy}>
-                        編集
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={() => onDelete(tool.id)} disabled={isBusy}>
-                        削除
-                      </Button>
-                    </>
-                  )}
-                </Td>
+      <section className="card-surface" style={{ marginTop: 12 }}>
+        <div className="desktop-table">
+          <Table>
+            <thead>
+              <tr>
+                <Th>工具名</Th>
+                <Th>工具ID</Th>
+                <Th>倉庫</Th>
+                <Th>状態</Th>
+                <Th>操作</Th>
               </tr>
-            );
-          })}
-        </tbody>
-      </Table>
+            </thead>
+            <tbody>
+              {tools.map((tool) => {
+                const isEditing = editingId === tool.id;
+                const isBusy = submitting.has(tool.id);
+                return (
+                  <tr key={tool.id}>
+                    <Td>
+                      {isEditing ? (
+                        <Input value={editingName} onChange={(e) => setEditingName(e.target.value)} disabled={isBusy} />
+                      ) : (
+                        tool.name
+                      )}
+                    </Td>
+                    <Td>
+                      {isEditing ? (
+                        <Input value={editingAssetNo} onChange={(e) => setEditingAssetNo(e.target.value)} disabled={isBusy} />
+                      ) : (
+                        tool.assetNo
+                      )}
+                    </Td>
+                    <Td>
+                      {isEditing ? (
+                        <select
+                          value={editingWarehouseId}
+                          onChange={(e) => setEditingWarehouseId(e.target.value)}
+                          disabled={isBusy}
+                          style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
+                        >
+                          {warehouses.map((warehouse) => (
+                            <option key={warehouse.id} value={warehouse.id}>
+                              {warehouse.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        mapWarehouse.get(tool.warehouseId) || "不明"
+                      )}
+                    </Td>
+                    <Td>
+                      {isEditing ? (
+                        <select
+                          value={editingStatus}
+                          onChange={(e) => setEditingStatus(e.target.value as ToolStatus)}
+                          disabled={isBusy}
+                          style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
+                        >
+                          <option value="available">貸出可</option>
+                          <option value="loaned">貸出中</option>
+                          <option value="repairing">修理中</option>
+                          <option value="lost">紛失</option>
+                        </select>
+                      ) : (
+                        <StatusBadge status={tool.status} />
+                      )}
+                    </Td>
+                    <Td>
+                      {isEditing ? (
+                        <ActionMenu
+                          disabled={isBusy}
+                          items={[
+                            { key: "save", label: "保存", onClick: () => void onSave(tool.id), disabled: isBusy },
+                            { key: "cancel", label: "キャンセル", onClick: onCancelEdit, disabled: isBusy },
+                          ]}
+                        />
+                      ) : (
+                        <ActionMenu
+                          disabled={isBusy}
+                          items={[
+                            { key: "edit", label: "編集", onClick: () => onStartEdit(tool), disabled: isBusy },
+                            { key: "delete", label: "削除", onClick: () => void onDelete(tool.id), danger: true, disabled: isBusy },
+                          ]}
+                        />
+                      )}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </div>
+      </section>
     </main>
   );
 }

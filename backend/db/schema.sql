@@ -13,6 +13,13 @@ CREATE TABLE users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE departments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE warehouses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL UNIQUE,
@@ -20,9 +27,11 @@ CREATE TABLE warehouses (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE SEQUENCE tool_asset_no_seq START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+
 CREATE TABLE tools (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    asset_no TEXT NOT NULL UNIQUE,
+    asset_no TEXT NOT NULL UNIQUE DEFAULT ('T-' || LPAD(nextval('tool_asset_no_seq')::text, 6, '0')),
     tag_id TEXT NULL,
     name TEXT NOT NULL,
     warehouse_id UUID NOT NULL REFERENCES warehouses(id),

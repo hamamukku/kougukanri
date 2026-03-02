@@ -1,20 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 
 export default function LoginPage() {
   const router = useRouter();
-  const [nextPath, setNextPath] = useState("/tools");
-
-  useEffect(() => {
+  const [nextPath] = useState(() => {
+    if (typeof window === "undefined") return "/tools";
     const query = new URLSearchParams(window.location.search);
     const raw = query.get("next") || "/tools";
-    setNextPath(raw.startsWith("/") ? raw : "/tools");
-  }, []);
+    return raw.startsWith("/") ? raw : "/tools";
+  });
 
   const setCookie = (name: string, value: string) => {
     document.cookie = `${name}=${value}; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}; SameSite=Lax`;

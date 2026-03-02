@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
+import ActionMenu from "../../../../src/components/ui/ActionMenu";
 import { useConfirm } from "../../../../src/components/ui/ConfirmProvider";
 import { HttpError, apiFetchJson } from "../../../../src/utils/http";
 
@@ -136,72 +137,71 @@ export default function AdminWarehousesPage() {
     }
   };
 
-  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><p style={{ color: '#b91c1c' }}>error: {err}</p></main>;
+  if (loading) return <main>loading...</main>;
+  if (err)
+    return (
+      <main>
+        <p style={{ color: "var(--danger)" }}>error: {err}</p>
+      </main>
+    );
 
   return (
-    <main style={{ padding: 16 }}>
+    <main>
       <h1>倉庫管理</h1>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="倉庫名" />
-        <Button type="button" onClick={onAdd} disabled={submitting.has("add")}>
-          追加
-        </Button>
-      </div>
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="倉庫名" />
+          <Button type="button" onClick={onAdd} disabled={submitting.has("add")}>
+            追加
+          </Button>
+        </div>
+      </section>
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ID</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>倉庫名</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {warehouses.map((warehouse) => {
-            const isEditing = editingId === warehouse.id;
-            const isBusy = submitting.has(warehouse.id);
-            return (
-              <tr key={warehouse.id}>
-                <td style={{ padding: "8px 0" }}>{warehouse.id}</td>
-                <td style={{ padding: "8px 0" }}>
-                  {isEditing ? (
-                    <Input
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      disabled={isBusy}
-                    />
-                  ) : (
-                    warehouse.name
-                  )}
-                </td>
-                <td style={{ padding: "8px 0" }}>
-                  {isEditing ? (
-                    <>
-                      <Button type="button" onClick={() => onSave(warehouse.id)} disabled={isBusy}>
-                        保存
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={onCancelEdit} disabled={isBusy}>
-                        キャンセル
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button type="button" onClick={() => onStartEdit(warehouse)} disabled={isBusy}>
-                        編集
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={() => onDelete(warehouse.id)} disabled={isBusy}>
-                        削除
-                      </Button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ID</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>倉庫名</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {warehouses.map((warehouse) => {
+              const isEditing = editingId === warehouse.id;
+              const isBusy = submitting.has(warehouse.id);
+              return (
+                <tr key={warehouse.id}>
+                  <td style={{ padding: "8px 0" }}>{warehouse.id}</td>
+                  <td style={{ padding: "8px 0" }}>
+                    {isEditing ? <Input value={editingName} onChange={(e) => setEditingName(e.target.value)} disabled={isBusy} /> : warehouse.name}
+                  </td>
+                  <td style={{ padding: "8px 0" }}>
+                    {isEditing ? (
+                      <ActionMenu
+                        disabled={isBusy}
+                        items={[
+                          { key: "save", label: "保存", onClick: () => void onSave(warehouse.id), disabled: isBusy },
+                          { key: "cancel", label: "キャンセル", onClick: onCancelEdit, disabled: isBusy },
+                        ]}
+                      />
+                    ) : (
+                      <ActionMenu
+                        disabled={isBusy}
+                        items={[
+                          { key: "edit", label: "編集", onClick: () => onStartEdit(warehouse), disabled: isBusy },
+                          { key: "delete", label: "削除", onClick: () => void onDelete(warehouse.id), danger: true, disabled: isBusy },
+                        ]}
+                      />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
     </main>
   );
 }

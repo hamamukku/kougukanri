@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f3f7fb;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --foreground: #10243a;
+  --border: #d8e2ec;
+  --primary: #0c4a6e;
+  --primary-strong: #0a3a57;
+  --danger: #b91c1c;
+  --success: #166534;
 }
 
 @theme inline {
@@ -12,15 +19,108 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Yu Gothic UI", "Hiragino Sans", "Meiryo", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.app-main {
+  padding: 16px;
+}
+
+.card-surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.sticky-tools-filter {
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+  padding: 12px;
+  margin-top: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.desktop-table {
+  display: block;
+}
+
+.mobile-cards {
+  display: none;
+}
+
+.loan-box-fab {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 70;
+  width: 58px;
+  height: 58px;
+  border-radius: 999px;
+  border: 1px solid var(--primary);
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 12px 24px rgba(9, 55, 84, 0.28);
+  cursor: pointer;
+}
+
+.loan-box-fab-badge {
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid #fff;
+  background: #f97316;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+@media (max-width: 960px) {
+  .layout-with-nav {
+    flex-direction: column;
+  }
+
+  .layout-side-nav {
+    width: 100% !important;
+    min-height: auto !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 760px) {
+  .desktop-table {
+    display: none;
+  }
+
+  .mobile-cards {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .sticky-tools-filter {
+    position: static;
+  }
+
+  .app-main {
+    padding: 12px;
+  }
 }

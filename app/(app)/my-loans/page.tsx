@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../../src/components/ui/Button";
+import StatusBadge from "../../../src/components/ui/StatusBadge";
 import { Table, Td, Th } from "../../../src/components/ui/Table";
-import { statusLabel } from "../../../src/utils/format";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../src/utils/http";
 
 type MyBox = {
@@ -111,12 +111,17 @@ export default function MyLoansPage() {
     }
   };
 
-  if (loading) return <main style={{ padding: 16 }}>loading...</main>;
-  if (err) return <main style={{ padding: 16 }}><p style={{ color: "#b91c1c" }}>error: {err}</p></main>;
+  if (loading) return <main>loading...</main>;
+  if (err)
+    return (
+      <main>
+        <p style={{ color: "var(--danger)" }}>error: {err}</p>
+      </main>
+    );
 
   return (
-    <main style={{ padding: 16 }}>
-      <h1>My Loans</h1>
+    <main>
+      <h1>貸出一覧</h1>
 
       {boxes.length === 0 ? (
         <p>表示する貸出情報がありません。</p>
@@ -128,40 +133,74 @@ export default function MyLoansPage() {
             .sort((a, b) => b.dueEffective.localeCompare(a.dueEffective));
 
           return (
-            <section key={box.box.id} style={{ marginBottom: 24 }}>
-              <h2 style={{ marginBottom: 4 }}>
-                {box.box.ownerUsername}-ボックス{box.box.boxNo}
-              </h2>
-              <p style={{ marginTop: 0 }}>
-                開始日: {box.box.startDate} / 期限日: {box.box.dueDate}
-              </p>
+            <section key={box.box.id} style={{ marginTop: 16 }} className="card-surface">
+              <div style={{ padding: "12px 12px 0" }}>
+                <h2 style={{ marginBottom: 4 }}>{`${box.box.ownerUsername}-ボックス${box.box.boxNo}`}</h2>
+                <p style={{ marginTop: 0 }}>
+                  開始日: {box.box.startDate} / 期限日: {box.box.dueDate}
+                </p>
+              </div>
               {visibleItems.length === 0 ? (
-                <p>返却申請可能な工具はありません。</p>
+                <p style={{ padding: "0 12px 12px" }}>返却申請可能な工具はありません。</p>
               ) : (
-                <Table>
-                  <thead>
-                    <tr>
-                      <Th>工具名</Th>
-                      <Th>資産番号</Th>
-                      <Th>倉庫</Th>
-                      <Th>期限</Th>
-                      <Th>状態</Th>
-                      <Th>返却申請</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <>
+                  <div className="desktop-table">
+                    <Table>
+                      <thead>
+                        <tr>
+                          <Th>工具名</Th>
+                          <Th>工具ID</Th>
+                          <Th>倉庫</Th>
+                          <Th>期限</Th>
+                          <Th>状態</Th>
+                          <Th>返却申請</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleItems.map((item) => {
+                          const key = `${box.box.id}:${item.toolId}`;
+                          const requested = item.returnStatus === "requested";
+                          const busy = requesting.has(key);
+                          return (
+                            <tr key={key}>
+                              <Td>{item.toolName}</Td>
+                              <Td>{item.assetNo}</Td>
+                              <Td>{warehouseNameById.get(item.warehouseId) ?? "不明"}</Td>
+                              <Td>{item.dueEffective}</Td>
+                              <Td>
+                                <StatusBadge status={item.status} />
+                              </Td>
+                              <Td>
+                                <Button
+                                  type="button"
+                                  disabled={requested || busy}
+                                  onClick={() => onRequestReturn(box.box.id, item.toolId)}
+                                >
+                                  {requested ? "申請済" : busy ? "申請中..." : "返却申請"}
+                                </Button>
+                              </Td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </Table>
+                  </div>
+
+                  <div className="mobile-cards" style={{ padding: 12 }}>
                     {visibleItems.map((item) => {
                       const key = `${box.box.id}:${item.toolId}`;
                       const requested = item.returnStatus === "requested";
                       const busy = requesting.has(key);
                       return (
-                        <tr key={key}>
-                          <Td>{item.toolName}</Td>
-                          <Td>{item.assetNo}</Td>
-                          <Td>{warehouseNameById.get(item.warehouseId) ?? item.warehouseId}</Td>
-                          <Td>{item.dueEffective}</Td>
-                          <Td>{statusLabel(item.status)}</Td>
-                          <Td>
+                        <article key={key} className="card-surface" style={{ padding: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                            <strong>{item.toolName}</strong>
+                            <StatusBadge status={item.status} />
+                          </div>
+                          <div style={{ marginTop: 8, fontSize: 13 }}>工具ID: {item.assetNo}</div>
+                          <div style={{ marginTop: 4, fontSize: 13 }}>倉庫: {warehouseNameById.get(item.warehouseId) ?? "不明"}</div>
+                          <div style={{ marginTop: 4, fontSize: 13 }}>期限: {item.dueEffective}</div>
+                          <div style={{ marginTop: 8 }}>
                             <Button
                               type="button"
                               disabled={requested || busy}
@@ -169,12 +208,12 @@ export default function MyLoansPage() {
                             >
                               {requested ? "申請済" : busy ? "申請中..." : "返却申請"}
                             </Button>
-                          </Td>
-                        </tr>
+                          </div>
+                        </article>
                       );
                     })}
-                  </tbody>
-                </Table>
+                  </div>
+                </>
               )}
             </section>
           );

@@ -59,6 +59,10 @@ func main() {
 		log.Fatalf("service init failed: %v", err)
 	}
 
+	if err := service.EnsureDefaultDepartment(context.Background()); err != nil {
+		log.Fatalf("default department ensure failed: %v", err)
+	}
+
 	if err := service.EnsureSeedAdmin(context.Background()); err != nil {
 		log.Fatalf("seed admin failed: %v", err)
 	}

@@ -1,15 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import Toast from "@/src/components/ui/Toast";
-import { apiFetchJson, getHttpErrorMessage } from "@/src/utils/http";
+import { FormEvent, useEffect, useState } from "react";
+import Button from "../../src/components/ui/Button";
+import Input from "../../src/components/ui/Input";
+import Select from "../../src/components/ui/Select";
+import Toast from "../../src/components/ui/Toast";
+import { apiFetchJson, getHttpErrorMessage } from "../../src/utils/http";
 
 type SignupRequestResponse = {
   ok: boolean;
 };
 
+type Department = {
+  id: string;
+  name: string;
+};
+
 export default function SignupRequestPage() {
+  const [department, setDepartment] = useState("");
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,29 +27,48 @@ export default function SignupRequestPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const items = await apiFetchJson<Department[]>("/api/departments");
+        setDepartments(items);
+        if (items.length > 0) {
+          setDepartment((prev) => prev || items[0].name);
+        }
+      } catch (err: unknown) {
+        setError(getHttpErrorMessage(err));
+      }
+    })();
+  }, []);
+
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting) return;
-    if (!username.trim() || !email.trim() || !password.trim()) {
-      setError("入力が不足しています。");
+
+    if (!department.trim() || !username.trim() || !email.trim() || !password.trim()) {
+      setError("部署名・ユーザー名・メール・パスワードを入力してください。");
       return;
     }
+
     setSubmitting(true);
     setError(null);
+
     try {
       await apiFetchJson<SignupRequestResponse>("/api/public/signup/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          department: department.trim(),
           username: username.trim(),
           email: email.trim(),
           password,
         }),
       });
+      setDepartment("");
       setUsername("");
       setEmail("");
       setPassword("");
-      setToastMessage("申請しました。");
+      setToastMessage("申請を受け付けました。");
     } catch (err: unknown) {
       setError(getHttpErrorMessage(err));
     } finally {
@@ -58,58 +87,71 @@ export default function SignupRequestPage() {
       }}
     >
       <div style={{ width: 360, maxWidth: "90vw", display: "grid", gap: 12 }}>
-        <h1>アカウント作成申請</h1>
+        <h1>アカウント申請</h1>
+
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
-          <input
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="ユーザー名"
-            style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid #cbd5e1" }}
-          />
-          <input
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="メールアドレス"
-            type="email"
-            style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid #cbd5e1" }}
-          />
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="パスワード"
-            type="password"
-            style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid #cbd5e1" }}
-          />
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{ width: "100%", height: 40, borderRadius: 6 }}
-          >
-            申請する
-          </button>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>部署名</div>
+            <Select value={department} onChange={(event) => setDepartment(event.target.value)}>
+              {departments.map((item) => (
+                <option key={item.id} value={item.name}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>ユーザー名</div>
+            <Input
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="your_name"
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>メールアドレス</div>
+            <Input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              placeholder="you@example.com"
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>パスワード</div>
+            <Input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+            />
+          </div>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "送信中..." : "申請する"}
+          </Button>
         </form>
-        {error && <p style={{ color: "#b91c1c" }}>error: {error}</p>}
-        <div style={{ display: "grid", gap: 8 }}>
-          <Link
-            href="/login"
-            style={{
-              display: "inline-flex",
-              width: "100%",
-              height: 40,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 6,
-              border: "1px solid #cbd5e1",
-              background: "#f8fafc",
-              color: "#0f172a",
-              textDecoration: "none",
-              boxSizing: "border-box",
-            }}
-          >
-            ログインへ戻る
-          </Link>
-        </div>
+
+        {error ? <p style={{ color: "#b91c1c", margin: 0 }}>error: {error}</p> : null}
+
+        <Link
+          href="/login"
+          style={{
+            display: "inline-flex",
+            width: "100%",
+            height: 40,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 6,
+            border: "1px solid #cbd5e1",
+            background: "#f8fafc",
+            color: "#0f172a",
+            textDecoration: "none",
+            boxSizing: "border-box",
+          }}
+        >
+          ログインへ戻る
+        </Link>
       </div>
+
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
     </main>
   );

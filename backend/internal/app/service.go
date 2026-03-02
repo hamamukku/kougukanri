@@ -27,6 +27,8 @@ const (
 	RoleAdmin = "admin"
 	RoleUser  = "user"
 
+	DefaultDepartmentName = "仮会社"
+
 	BaseStatusAvailable = "AVAILABLE"
 	BaseStatusBroken    = "BROKEN"
 	BaseStatusRepair    = "REPAIR"
@@ -187,6 +189,21 @@ func ValidateDisplayStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func normalizeDepartmentName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func normalizeOptionalTagID(tagID *string) *string {
+	if tagID == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*tagID)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func normalizeMode(mode string) string {
@@ -428,6 +445,156 @@ func (s *Service) ListWarehouses(ctx context.Context) ([]db.Warehouse, error) {
 	return s.queries.ListWarehouses(ctx)
 }
 
+func (s *Service) EnsureDefaultDepartment(ctx context.Context) error {
+	_, err := s.queries.CreateDepartmentIfNotExists(ctx, DefaultDepartmentName)
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return mapped
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Service) ensureDepartmentExists(ctx context.Context, name string) error {
+	normalized := normalizeDepartmentName(name)
+	if normalized == "" {
+		return apierr.InvalidRequest("department is required", nil)
+	}
+	if _, err := s.queries.GetDepartmentByName(ctx, normalized); err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return apierr.InvalidRequest("department does not exist", map[string]any{"department": normalized})
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Service) EnsureDepartmentExistsOrCreate(ctx context.Context, name string) error {
+	normalized := normalizeDepartmentName(name)
+	if normalized == "" {
+		return apierr.InvalidRequest("department is required", nil)
+	}
+	if _, err := s.queries.CreateDepartmentIfNotExists(ctx, normalized); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return mapped
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Service) ListDepartments(ctx context.Context) ([]db.Department, error) {
+	return s.queries.ListDepartments(ctx)
+}
+
+func (s *Service) CreateDepartment(ctx context.Context, actorID uuid.UUID, name string) (db.Department, error) {
+	name = normalizeDepartmentName(name)
+	if name == "" {
+		return db.Department{}, apierr.InvalidRequest("name is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.Department{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	department, err := qtx.CreateDepartment(ctx, name)
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.Department{}, mapped
+		}
+		return db.Department{}, err
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "create_department", "department", department.ID, map[string]any{
+		"name": department.Name,
+	}); err != nil {
+		return db.Department{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.Department{}, mapped
+		}
+		return db.Department{}, err
+	}
+
+	return department, nil
+}
+
+func (s *Service) DeleteDepartment(ctx context.Context, actorID, departmentID uuid.UUID) error {
+	if departmentID == uuid.Nil {
+		return apierr.InvalidRequest("departmentId is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	department, err := qtx.GetDepartmentByID(ctx, departmentID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return apierr.NotFound("department not found")
+		}
+		return err
+	}
+
+	if department.Name == DefaultDepartmentName {
+		return apierr.Conflict("DEFAULT_DEPARTMENT_PROTECTED", "default department cannot be deleted", map[string]any{
+			"departmentId": department.ID,
+			"name":         department.Name,
+		})
+	}
+
+	usageCount, err := qtx.CountDepartmentUsage(ctx, department.Name)
+	if err != nil {
+		return err
+	}
+	if usageCount > 0 {
+		return apierr.Conflict("DEPARTMENT_IN_USE", "cannot delete department that is in use", map[string]any{
+			"departmentId": department.ID,
+			"name":         department.Name,
+			"usageCount":   usageCount,
+		})
+	}
+
+	departmentCount, err := qtx.CountDepartments(ctx)
+	if err != nil {
+		return err
+	}
+	if departmentCount <= 1 {
+		return apierr.Conflict("LAST_DEPARTMENT", "cannot delete the last department", map[string]any{
+			"departmentId": department.ID,
+			"name":         department.Name,
+		})
+	}
+
+	affected, err := qtx.DeleteDepartmentByID(ctx, departmentID)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return apierr.NotFound("department not found")
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "delete_department", "department", departmentID, map[string]any{
+		"name": department.Name,
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name string) (db.Warehouse, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -513,18 +680,42 @@ func (s *Service) DeleteWarehouse(ctx context.Context, actorID, warehouseID uuid
 	return nil
 }
 
-func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, name string, warehouseID uuid.UUID, baseStatus string) (db.Tool, error) {
+func normalizeCreateToolParams(assetNo, name string, warehouseID uuid.UUID, baseStatus string, tagID *string) (db.CreateToolParams, error) {
 	assetNo = strings.TrimSpace(assetNo)
 	name = strings.TrimSpace(name)
 	baseStatus = strings.ToUpper(strings.TrimSpace(baseStatus))
-	if assetNo == "" || name == "" {
-		return db.Tool{}, apierr.InvalidRequest("assetNo and name are required", nil)
+	if name == "" {
+		return db.CreateToolParams{}, apierr.InvalidRequest("name is required", nil)
 	}
 	if warehouseID == uuid.Nil {
-		return db.Tool{}, apierr.InvalidRequest("warehouseId is required", nil)
+		return db.CreateToolParams{}, apierr.InvalidRequest("warehouseId is required", nil)
+	}
+	if baseStatus == "" {
+		baseStatus = BaseStatusAvailable
 	}
 	if !ValidateBaseStatus(baseStatus) {
-		return db.Tool{}, apierr.InvalidRequest("invalid baseStatus", map[string]any{"baseStatus": baseStatus})
+		return db.CreateToolParams{}, apierr.InvalidRequest("invalid baseStatus", map[string]any{"baseStatus": baseStatus})
+	}
+
+	tag := normalizeOptionalTagID(tagID)
+	tagValue := sql.NullString{}
+	if tag != nil {
+		tagValue = sql.NullString{String: *tag, Valid: true}
+	}
+
+	return db.CreateToolParams{
+		AssetNo:     assetNo,
+		TagID:       tagValue,
+		Name:        name,
+		WarehouseID: warehouseID,
+		BaseStatus:  baseStatus,
+	}, nil
+}
+
+func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, name string, warehouseID uuid.UUID, baseStatus string) (db.Tool, error) {
+	createParams, err := normalizeCreateToolParams(assetNo, name, warehouseID, baseStatus, nil)
+	if err != nil {
+		return db.Tool{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -534,12 +725,7 @@ func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, na
 	defer tx.Rollback()
 	qtx := s.queries.WithTx(tx)
 
-	tool, err := qtx.CreateTool(ctx, db.CreateToolParams{
-		AssetNo:     assetNo,
-		Name:        name,
-		WarehouseID: warehouseID,
-		BaseStatus:  baseStatus,
-	})
+	tool, err := qtx.CreateTool(ctx, createParams)
 	if err != nil {
 		if mapped := mapPQError(err); mapped != nil {
 			return db.Tool{}, mapped
@@ -547,8 +733,14 @@ func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, na
 		return db.Tool{}, err
 	}
 
+	var tagPayload any
+	if tool.TagID.Valid && strings.TrimSpace(tool.TagID.String) != "" {
+		tagPayload = tool.TagID.String
+	}
+
 	if err := s.auditTx(ctx, qtx, &actorID, "create_tool", "tool", tool.ID, map[string]any{
 		"assetNo":     tool.AssetNo,
+		"tagId":       tagPayload,
 		"name":        tool.Name,
 		"warehouseId": tool.WarehouseID,
 		"baseStatus":  tool.BaseStatus,
@@ -564,6 +756,138 @@ func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, na
 	}
 
 	return tool, nil
+}
+
+type CreateToolBulkInput struct {
+	Name       string
+	WarehouseID uuid.UUID
+	BaseStatus string
+	TagID      *string
+}
+
+type BulkToolRowError struct {
+	Row     int
+	Field   string
+	Message string
+}
+
+type CreateToolBulkResult struct {
+	Tools []db.Tool
+}
+
+func bulkRowError(row int, field, message string) BulkToolRowError {
+	return BulkToolRowError{
+		Row:     row,
+		Field:   field,
+		Message: message,
+	}
+}
+
+func (s *Service) CreateToolsBulk(ctx context.Context, actorID uuid.UUID, items []CreateToolBulkInput) (CreateToolBulkResult, error) {
+	if len(items) == 0 {
+		return CreateToolBulkResult{}, apierr.InvalidRequest("tools is required", nil)
+	}
+
+	rowErrors := make([]BulkToolRowError, 0)
+	normalized := make([]db.CreateToolParams, len(items))
+	tagSeenRow := make(map[string]int)
+
+	for i, item := range items {
+		row := i + 1
+		params, err := normalizeCreateToolParams("", item.Name, item.WarehouseID, item.BaseStatus, item.TagID)
+		if err != nil {
+			var apiError *apierr.APIError
+			if stdErrors.As(err, &apiError) {
+				switch {
+				case strings.Contains(apiError.Message, "name"):
+					rowErrors = append(rowErrors, bulkRowError(row, "name", apiError.Message))
+				case strings.Contains(apiError.Message, "warehouseId"):
+					rowErrors = append(rowErrors, bulkRowError(row, "warehouseId", apiError.Message))
+				case strings.Contains(apiError.Message, "baseStatus"):
+					rowErrors = append(rowErrors, bulkRowError(row, "baseStatus", apiError.Message))
+				default:
+					rowErrors = append(rowErrors, bulkRowError(row, "tool", apiError.Message))
+				}
+				continue
+			}
+			return CreateToolBulkResult{}, err
+		}
+
+		if params.TagID.Valid {
+			if firstRow, ok := tagSeenRow[params.TagID.String]; ok {
+				rowErrors = append(rowErrors, bulkRowError(row, "tagId", fmt.Sprintf("tagId duplicates row %d", firstRow)))
+			} else {
+				tagSeenRow[params.TagID.String] = row
+			}
+		}
+
+		normalized[i] = params
+	}
+
+	if len(rowErrors) > 0 {
+		return CreateToolBulkResult{}, apierr.InvalidRequest("invalid tools payload", map[string]any{
+			"rowErrors": rowErrors,
+		})
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return CreateToolBulkResult{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	for i, params := range normalized {
+		if _, err := qtx.GetWarehouseByID(ctx, params.WarehouseID); err != nil {
+			if stdErrors.Is(err, sql.ErrNoRows) {
+				rowErrors = append(rowErrors, bulkRowError(i+1, "warehouseId", "warehouse not found"))
+				continue
+			}
+			return CreateToolBulkResult{}, err
+		}
+	}
+	if len(rowErrors) > 0 {
+		return CreateToolBulkResult{}, apierr.InvalidRequest("invalid tools payload", map[string]any{
+			"rowErrors": rowErrors,
+		})
+	}
+
+	created := make([]db.Tool, 0, len(normalized))
+	createdIDs := make([]uuid.UUID, 0, len(normalized))
+	for i, params := range normalized {
+		tool, err := qtx.CreateTool(ctx, params)
+		if err != nil {
+			if mapped := mapPQError(err); mapped != nil {
+				var apiError *apierr.APIError
+				if stdErrors.As(mapped, &apiError) {
+					return CreateToolBulkResult{}, apierr.New(apiError.Status, apiError.Code, apiError.Message, map[string]any{
+						"row":     i + 1,
+						"details": apiError.Details,
+					})
+				}
+				return CreateToolBulkResult{}, mapped
+			}
+			return CreateToolBulkResult{}, err
+		}
+		created = append(created, tool)
+		createdIDs = append(createdIDs, tool.ID)
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "create_tools_bulk", "tool", uuid.Nil, map[string]any{
+		"count":   len(created),
+		"toolIds": createdIDs,
+	}); err != nil {
+		return CreateToolBulkResult{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return CreateToolBulkResult{}, mapped
+		}
+		return CreateToolBulkResult{}, err
+	}
+
+	return CreateToolBulkResult{Tools: created}, nil
 }
 
 type UpdateToolInput struct {
@@ -804,7 +1128,7 @@ type UserListResult struct {
 }
 
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSafe, error) {
-	in.Department = strings.TrimSpace(in.Department)
+	in.Department = normalizeDepartmentName(in.Department)
 	in.Username = strings.TrimSpace(in.Username)
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
 	in.Role = strings.TrimSpace(strings.ToLower(in.Role))
@@ -814,6 +1138,9 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSa
 	}
 	if !ValidateRole(in.Role) {
 		return db.UserSafe{}, apierr.InvalidRequest("invalid role", map[string]any{"role": in.Role})
+	}
+	if err := s.ensureDepartmentExists(ctx, in.Department); err != nil {
+		return db.UserSafe{}, err
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
@@ -961,9 +1288,15 @@ func (s *Service) UpdateMyProfile(ctx context.Context, userID uuid.UUID, in Upda
 
 	department := current.Department
 	if in.Department != nil {
-		trimmed := strings.TrimSpace(*in.Department)
+		trimmed := normalizeDepartmentName(*in.Department)
 		if trimmed == "" {
 			return db.UserSafe{}, apierr.InvalidRequest("department cannot be empty", nil)
+		}
+		if _, err := qtx.GetDepartmentByName(ctx, trimmed); err != nil {
+			if stdErrors.Is(err, sql.ErrNoRows) {
+				return db.UserSafe{}, apierr.InvalidRequest("department does not exist", map[string]any{"department": trimmed})
+			}
+			return db.UserSafe{}, err
 		}
 		department = trimmed
 	}
@@ -1031,13 +1364,16 @@ func (s *Service) UpdateMyProfile(ctx context.Context, userID uuid.UUID, in Upda
 }
 
 func (s *Service) CreateSignupRequest(ctx context.Context, in SignupRequestInput) (SignupRequestItem, error) {
-	in.Department = strings.TrimSpace(in.Department)
+	in.Department = normalizeDepartmentName(in.Department)
 	in.Username = strings.TrimSpace(in.Username)
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
 	in.Password = strings.TrimSpace(in.Password)
 
 	if in.Department == "" || in.Username == "" || in.Email == "" || in.Password == "" {
 		return SignupRequestItem{}, apierr.InvalidRequest("department, username, email, password are required", nil)
+	}
+	if err := s.ensureDepartmentExists(ctx, in.Department); err != nil {
+		return SignupRequestItem{}, err
 	}
 
 	if _, err := s.queries.GetUserByLoginID(ctx, in.Username); err == nil {
@@ -1643,6 +1979,14 @@ func (s *Service) EnsureSeedAdmin(ctx context.Context) error {
 		return nil
 	}
 
+	seedDepartment := normalizeDepartmentName(s.cfg.SeedAdminDepartment)
+	if seedDepartment == "" {
+		seedDepartment = DefaultDepartmentName
+	}
+	if err := s.EnsureDepartmentExistsOrCreate(ctx, seedDepartment); err != nil {
+		return err
+	}
+
 	count, err := s.queries.CountUsers(ctx)
 	if err != nil {
 		return err
@@ -1652,7 +1996,7 @@ func (s *Service) EnsureSeedAdmin(ctx context.Context) error {
 	}
 
 	_, err = s.CreateUser(ctx, CreateUserInput{
-		Department: s.cfg.SeedAdminDepartment,
+		Department: seedDepartment,
 		Username:   s.cfg.SeedAdminUsername,
 		Email:      s.cfg.SeedAdminEmail,
 		Password:   s.cfg.SeedAdminPassword,
@@ -1765,6 +2109,8 @@ func mapPQError(err error) error {
 		switch pqErr.Constraint {
 		case "warehouses_name_key":
 			return apierr.Conflict("WAREHOUSE_NAME_DUPLICATE", "warehouse name already exists", nil)
+		case "departments_name_key":
+			return apierr.Conflict("DEPARTMENT_NAME_DUPLICATE", "department name already exists", nil)
 		case "tools_asset_no_key":
 			return apierr.Conflict("TOOL_ASSET_NO_DUPLICATE", "assetNo already exists", nil)
 		case "idx_tools_tag_id_unique":

@@ -178,7 +178,7 @@ export default function AdminReturnsPage() {
                   <tr>
                     <Th>選択</Th>
                     <Th>工具名</Th>
-                    <Th>資産番号</Th>
+                    <Th>工具ID</Th>
                     <Th>倉庫</Th>
                     <Th>期限</Th>
                     <Th>申請日時</Th>

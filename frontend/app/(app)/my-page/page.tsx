@@ -16,6 +16,11 @@ type Profile = {
   createdAt?: string;
 };
 
+type Department = {
+  id: string;
+  name: string;
+};
+
 function formatDateTime(value: string | undefined): string {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -25,6 +30,7 @@ function formatDateTime(value: string | undefined): string {
 
 export default function MyPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [department, setDepartment] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -50,11 +56,15 @@ export default function MyPage() {
   const loadProfile = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetchJson<Profile>("/api/my/profile");
+      const [data, departmentItems] = await Promise.all([
+        apiFetchJson<Profile>("/api/my/profile"),
+        apiFetchJson<Department[]>("/api/departments"),
+      ]);
       setProfile(data);
       setDepartment(data.department);
       setUsername(data.username);
       setEmail(data.email);
+      setDepartments(departmentItems);
       setError(null);
     } catch (err: unknown) {
       const msg = handleApiError(err);
@@ -121,7 +131,17 @@ export default function MyPage() {
       <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
         <div>
           <div style={{ fontSize: 12, marginBottom: 4 }}>部署</div>
-          <Input value={department} onChange={(e) => setDepartment(e.target.value)} />
+          <select
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", padding: "0 10px", width: "100%" }}
+          >
+            {departments.map((item) => (
+              <option key={item.id} value={item.name}>
+                {item.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>

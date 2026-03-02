@@ -1,12 +1,16 @@
-﻿export function statusLabel(status: string) {
-  switch (status) {
-    case "available":
+export function statusLabel(status: string) {
+  switch (status.trim().toUpperCase()) {
+    case "AVAILABLE":
       return "貸出可";
-    case "loaned":
+    case "LOANED":
       return "貸出中";
-    case "repairing":
+    case "RESERVED":
+      return "予約中";
+    case "REPAIRING":
+    case "REPAIR":
       return "修理中";
-    case "lost":
+    case "LOST":
+    case "BROKEN":
       return "紛失";
     default:
       return status;

@@ -9,6 +9,7 @@ import (
 
 type CreateToolParams struct {
 	AssetNo     string
+	TagID       sql.NullString
 	Name        string
 	WarehouseID uuid.UUID
 	BaseStatus  string
@@ -17,16 +18,18 @@ type CreateToolParams struct {
 const createToolQuery = `
 INSERT INTO tools (
     asset_no,
+    tag_id,
     name,
     warehouse_id,
     base_status,
     created_at,
     updated_at
 ) VALUES (
-    $1,
+    COALESCE(NULLIF($1, ''), 'T-' || LPAD(nextval('tool_asset_no_seq')::text, 6, '0')),
     $2,
     $3,
     $4,
+    $5,
     NOW(),
     NOW()
 )
@@ -36,6 +39,7 @@ RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, upd
 func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, error) {
 	row := q.db.QueryRowContext(ctx, createToolQuery,
 		arg.AssetNo,
+		arg.TagID,
 		arg.Name,
 		arg.WarehouseID,
 		arg.BaseStatus,

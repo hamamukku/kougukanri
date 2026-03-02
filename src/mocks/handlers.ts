@@ -253,8 +253,8 @@ function normalizeUsers(items: unknown[] | null): AdminUser[] {
 
 function normalizePendingUsers(items: unknown[] | null): PendingUser[] {
   if (!Array.isArray(items) || items.length === 0) return [...PENDING_USERS_FALLBACK];
-  const list = items
-    .map((item, index) => {
+  const list: PendingUser[] = items
+    .map((item, index): PendingUser => {
       const obj = item as Record<string, unknown>;
       return {
         id: typeof obj.id === "string" && obj.id.trim() ? obj.id : `pr-${Date.now()}-${index}`,

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import LogoutButton from "./logout-button";
 import { LoanBoxProvider } from "../../src/state/loanBoxStore";
 import SideNav from "./side-nav";
+import AuthMeSync from "./auth-me-sync";
 
 export default async function AppShellLayout({
   children,
@@ -38,6 +39,7 @@ export default async function AppShellLayout({
       </header>
 
       <LoanBoxProvider>
+        <AuthMeSync />
         <div style={{ display: "flex", alignItems: "stretch" }}>
           <aside
             style={{

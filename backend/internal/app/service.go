@@ -595,10 +595,17 @@ func (s *Service) DeleteDepartment(ctx context.Context, actorID, departmentID uu
 	return nil
 }
 
-func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name string) (db.Warehouse, error) {
+func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name string, warehouseNo *string) (db.Warehouse, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return db.Warehouse{}, apierr.InvalidRequest("name is required", nil)
+	}
+	normalizedWarehouseNo := sql.NullString{}
+	if warehouseNo != nil {
+		v := strings.TrimSpace(*warehouseNo)
+		if v != "" {
+			normalizedWarehouseNo = sql.NullString{String: v, Valid: true}
+		}
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -608,7 +615,7 @@ func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name s
 	defer tx.Rollback()
 	qtx := s.queries.WithTx(tx)
 
-	warehouse, err := qtx.CreateWarehouse(ctx, name)
+	warehouse, err := qtx.CreateWarehouse(ctx, name, normalizedWarehouseNo)
 	if err != nil {
 		if mapped := mapPQError(err); mapped != nil {
 			return db.Warehouse{}, mapped
@@ -616,8 +623,14 @@ func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name s
 		return db.Warehouse{}, err
 	}
 
+	var warehouseNoPayload any
+	if warehouse.WarehouseNo.Valid && strings.TrimSpace(warehouse.WarehouseNo.String) != "" {
+		warehouseNoPayload = warehouse.WarehouseNo.String
+	}
+
 	if err := s.auditTx(ctx, qtx, &actorID, "create_warehouse", "warehouse", warehouse.ID, map[string]any{
-		"name": warehouse.Name,
+		"name":        warehouse.Name,
+		"warehouseNo": warehouseNoPayload,
 	}); err != nil {
 		return db.Warehouse{}, err
 	}
@@ -759,10 +772,10 @@ func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, na
 }
 
 type CreateToolBulkInput struct {
-	Name       string
+	Name        string
 	WarehouseID uuid.UUID
-	BaseStatus string
-	TagID      *string
+	BaseStatus  string
+	TagID       *string
 }
 
 type BulkToolRowError struct {

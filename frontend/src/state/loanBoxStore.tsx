@@ -77,7 +77,10 @@ export function LoanBoxProvider({ children }: { children: React.ReactNode }) {
       },
       hasInSelection: (id: string) => selectedToolIds.has(id),
       clearSelection: () => {
-        setSelectedToolIds(new Set());
+        const empty = new Set<string>();
+        setSelectedToolIds(empty);
+        // Ensure persistence is cleared even if the component unmounts immediately.
+        writeSelection(empty);
       },
     };
   }, [selectedToolIds]);

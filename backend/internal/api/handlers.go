@@ -210,8 +210,9 @@ func (h *Handler) listWarehouses(c *gin.Context) {
 	resp := make([]gin.H, 0, len(items))
 	for _, w := range items {
 		resp = append(resp, gin.H{
-			"id":   w.ID,
-			"name": w.Name,
+			"id":          w.ID,
+			"name":        w.Name,
+			"warehouseNo": nullableNullString(w.WarehouseNo),
 		})
 	}
 	c.JSON(http.StatusOK, resp)
@@ -235,7 +236,8 @@ func (h *Handler) listDepartments(c *gin.Context) {
 }
 
 type createWarehouseRequest struct {
-	Name string `json:"name"`
+	Name        string  `json:"name"`
+	WarehouseNo *string `json:"warehouseNo"`
 }
 
 func (h *Handler) createWarehouse(c *gin.Context) {
@@ -245,12 +247,16 @@ func (h *Handler) createWarehouse(c *gin.Context) {
 		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
 		return
 	}
-	item, err := h.svc.CreateWarehouse(c.Request.Context(), user.ID, req.Name)
+	item, err := h.svc.CreateWarehouse(c.Request.Context(), user.ID, req.Name, req.WarehouseNo)
 	if err != nil {
 		WriteError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"id": item.ID, "name": item.Name})
+	c.JSON(http.StatusCreated, gin.H{
+		"id":          item.ID,
+		"name":        item.Name,
+		"warehouseNo": nullableNullString(item.WarehouseNo),
+	})
 }
 
 func (h *Handler) deleteWarehouse(c *gin.Context) {

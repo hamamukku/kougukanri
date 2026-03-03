@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
 import StatusBadge from "../../../../src/components/ui/StatusBadge";
-import ActionMenu from "../../../../src/components/ui/ActionMenu";
 import { ToolDisplayStatus } from "../../../../src/utils/format";
 import { Table, Td, Th } from "../../../../src/components/ui/Table";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
@@ -16,7 +15,7 @@ type Warehouse = {
   name: string;
 };
 
-type BaseStatus = "AVAILABLE" | "BROKEN" | "REPAIR";
+type EditableStatus = "AVAILABLE" | "BROKEN" | "REPAIR";
 
 type Tool = {
   id: string;
@@ -24,7 +23,7 @@ type Tool = {
   assetNo: string;
   warehouseId: string;
   warehouseName: string;
-  baseStatus: BaseStatus;
+  baseStatus?: string;
   status: ToolDisplayStatus;
 };
 
@@ -42,7 +41,31 @@ type BulkInputRow = {
   tagId: string;
 };
 
-const baseStatusOptions: BaseStatus[] = ["AVAILABLE", "BROKEN", "REPAIR"];
+type ToolPatchPayload = {
+  warehouseId?: string;
+  baseStatus?: EditableStatus;
+};
+
+const statusOptions: EditableStatus[] = ["AVAILABLE", "BROKEN", "REPAIR"];
+const statusLabelJa: Record<EditableStatus, string> = {
+  AVAILABLE: "貸出可",
+  BROKEN: "故障",
+  REPAIR: "修理中",
+};
+
+const selectStyle: React.CSSProperties = {
+  height: 36,
+  borderRadius: 6,
+  border: "1px solid #cbd5e1",
+  width: "100%",
+};
+
+const badgeButtonStyle: React.CSSProperties = {
+  border: "none",
+  background: "transparent",
+  padding: 0,
+  cursor: "pointer",
+};
 
 function createBulkRow(defaultWarehouseId: string): BulkInputRow {
   return {
@@ -51,6 +74,17 @@ function createBulkRow(defaultWarehouseId: string): BulkInputRow {
     warehouseId: defaultWarehouseId,
     tagId: "",
   };
+}
+
+function toEditableStatus(status: string): EditableStatus {
+  switch (status) {
+    case "AVAILABLE":
+    case "BROKEN":
+    case "REPAIR":
+      return status;
+    default:
+      return "AVAILABLE";
+  }
 }
 
 export default function AdminToolsPage() {
@@ -62,16 +96,12 @@ export default function AdminToolsPage() {
   const [mode, setMode] = useState<"single" | "bulk">("single");
   const [name, setName] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
-  const [baseStatus, setBaseStatus] = useState<BaseStatus>("AVAILABLE");
+  const [status, setStatus] = useState<EditableStatus>("AVAILABLE");
 
   const [bulkRows, setBulkRows] = useState<BulkInputRow[]>([]);
   const [bulkRowErrors, setBulkRowErrors] = useState<Record<number, string>>({});
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
-  const [editingWarehouseId, setEditingWarehouseId] = useState("");
-  const [editingBaseStatus, setEditingBaseStatus] = useState<BaseStatus>("AVAILABLE");
-
+  const [statusEditingId, setStatusEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const router = useRouter();
@@ -112,7 +142,7 @@ export default function AdminToolsPage() {
   }, [handleApiError]);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
   useEffect(() => {
@@ -123,12 +153,6 @@ export default function AdminToolsPage() {
       setBulkRows([createBulkRow(warehouses[0].id)]);
     }
   }, [bulkRows.length, warehouseId, warehouses]);
-
-  const mapWarehouse = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const warehouse of warehouses) map.set(warehouse.id, warehouse.name);
-    return map;
-  }, [warehouses]);
 
   const onAdd = async () => {
     if (!name.trim() || !warehouseId) return;
@@ -142,11 +166,12 @@ export default function AdminToolsPage() {
         body: JSON.stringify({
           name: name.trim(),
           warehouseId,
-          baseStatus,
+          // Backward-compatible API field name.
+          baseStatus: status,
         }),
       });
       setName("");
-      setBaseStatus("AVAILABLE");
+      setStatus("AVAILABLE");
       await loadData();
     } catch (e: unknown) {
       const message = handleApiError(e);
@@ -181,14 +206,14 @@ export default function AdminToolsPage() {
       for (const rowError of rowErrors) {
         if (!rowError || typeof rowError.row !== "number") continue;
         const suffix = rowError.field ? `${rowError.field}: ` : "";
-        next[rowError.row] = `${suffix}${rowError.message ?? "エラー"}`;
+        next[rowError.row] = `${suffix}${rowError.message ?? "Error"}`;
       }
       return next;
     }
 
     const row = body.error?.details?.row;
     if (typeof row === "number") {
-      next[row] = body.error?.message ?? "登録に失敗しました";
+      next[row] = body.error?.message ?? "一括登録に失敗しました";
     }
     return next;
   };
@@ -231,54 +256,57 @@ export default function AdminToolsPage() {
     }
   };
 
-  const onStartEdit = (tool: Tool) => {
-    setEditingId(tool.id);
-    setEditingName(tool.name);
-    setEditingWarehouseId(tool.warehouseId);
-    setEditingBaseStatus(tool.baseStatus);
-  };
+  const patchToolInline = async (tool: Tool, payload: ToolPatchPayload, optimistic: Partial<Tool>) => {
+    if (submitting.has(tool.id) || deletingId !== null) return;
 
-  const onCancelEdit = () => {
-    setEditingId(null);
-    setEditingName("");
-    setEditingWarehouseId("");
-    setEditingBaseStatus("AVAILABLE");
-  };
+    setSubmitting((prev) => new Set(prev).add(tool.id));
+    setTools((prev) => prev.map((item) => (item.id === tool.id ? { ...item, ...optimistic } : item)));
+    setErr(null);
 
-  const onSave = async (id: string) => {
-    const nextName = editingName.trim();
-    if (!nextName || !editingWarehouseId) return;
-    if (submitting.has(id)) return;
-
-    setSubmitting((prev) => new Set(prev).add(id));
     try {
-      await apiFetchJson<{ id: string }>(`/api/admin/tools/${id}`, {
+      await apiFetchJson<{ id: string }>(`/api/admin/tools/${tool.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: nextName,
-          warehouseId: editingWarehouseId,
-          baseStatus: editingBaseStatus,
-        }),
+        body: JSON.stringify(payload),
       });
-      onCancelEdit();
-      await loadData();
     } catch (e: unknown) {
+      setTools((prev) => prev.map((item) => (item.id === tool.id ? tool : item)));
       const message = handleApiError(e);
       if (message) setErr(message);
     } finally {
       setSubmitting((prev) => {
         const next = new Set(prev);
-        next.delete(id);
+        next.delete(tool.id);
         return next;
       });
     }
   };
 
-  const onDelete = async (tool: Tool) => {
-    if (deletingId || submitting.size > 0) return;
+  const onChangeWarehouse = (tool: Tool, nextWarehouseId: string) => {
+    if (!nextWarehouseId || nextWarehouseId === tool.warehouseId) return;
 
-    const confirmed = window.confirm(`工具「${tool.name} (${tool.assetNo})」を削除します。よろしいですか？`);
+    const nextWarehouse = warehouses.find((warehouse) => warehouse.id === nextWarehouseId);
+    void patchToolInline(
+      tool,
+      { warehouseId: nextWarehouseId },
+      {
+        warehouseId: nextWarehouseId,
+        warehouseName: nextWarehouse?.name ?? tool.warehouseName,
+      },
+    );
+  };
+
+  const onChangeStatus = (tool: Tool, nextStatus: EditableStatus) => {
+    const currentStatus = toEditableStatus(tool.baseStatus ?? tool.status);
+    if (nextStatus === currentStatus) return;
+
+    void patchToolInline(tool, { baseStatus: nextStatus }, { baseStatus: nextStatus });
+  };
+
+  const onDelete = async (tool: Tool) => {
+    if (deletingId || submitting.has(tool.id)) return;
+
+    const confirmed = window.confirm(`工具「${tool.name} (${tool.assetNo})」を本当に削除しますか？`);
     if (!confirmed) return;
 
     setDeletingId(tool.id);
@@ -286,9 +314,6 @@ export default function AdminToolsPage() {
       await apiFetchJson<{ ok: boolean }>(`/api/admin/tools/${tool.id}`, {
         method: "DELETE",
       });
-      if (editingId === tool.id) {
-        onCancelEdit();
-      }
       await loadData();
     } catch (e: unknown) {
       const message = handleApiError(e);
@@ -336,11 +361,7 @@ export default function AdminToolsPage() {
             </div>
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫</div>
-              <select
-                value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-                style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", width: "100%" }}
-              >
+              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={selectStyle}>
                 {warehouses.map((warehouse) => (
                   <option key={warehouse.id} value={warehouse.id}>
                     {warehouse.name}
@@ -349,15 +370,11 @@ export default function AdminToolsPage() {
               </select>
             </div>
             <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>ベース状態</div>
-              <select
-                value={baseStatus}
-                onChange={(e) => setBaseStatus(e.target.value as BaseStatus)}
-                style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", width: "100%" }}
-              >
-                {baseStatusOptions.map((option) => (
+              <div style={{ fontSize: 12, marginBottom: 4 }}>状態</div>
+              <select value={status} onChange={(e) => setStatus(e.target.value as EditableStatus)} style={selectStyle}>
+                {statusOptions.map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {statusLabelJa[option]}
                   </option>
                 ))}
               </select>
@@ -378,7 +395,7 @@ export default function AdminToolsPage() {
                   variant="ghost"
                   onClick={() => setBulkRows((prev) => [...prev, createBulkRow(warehouses[0]?.id ?? "")])}
                 >
-                  行追加
+                  行を追加
                 </Button>
                 <Button type="button" onClick={onBulkSubmit} disabled={submitting.has("bulk")}>
                   {submitting.has("bulk") ? "登録中..." : "一括登録"}
@@ -423,7 +440,7 @@ export default function AdminToolsPage() {
                             prev.map((item) => (item.key === row.key ? { ...item, warehouseId: e.target.value } : item)),
                           )
                         }
-                        style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", width: "100%" }}
+                        style={selectStyle}
                       >
                         {warehouses.map((warehouse) => (
                           <option key={warehouse.id} value={warehouse.id}>
@@ -452,7 +469,7 @@ export default function AdminToolsPage() {
                         onClick={() => setBulkRows((prev) => prev.filter((item) => item.key !== row.key))}
                         style={{ borderColor: "#ef4444", color: "#b91c1c" }}
                       >
-                        行削除
+                        行を削除
                       </Button>
                     </Td>
                   </tr>
@@ -471,90 +488,74 @@ export default function AdminToolsPage() {
                 <Th>工具名</Th>
                 <Th>工具ID</Th>
                 <Th>倉庫</Th>
-                <Th>表示状態</Th>
-                <Th>ベース状態</Th>
+                <Th>状態</Th>
                 <Th>操作</Th>
               </tr>
             </thead>
             <tbody>
               {tools.map((tool) => {
-                const isEditing = editingId === tool.id;
                 const isBusy = submitting.has(tool.id);
                 const disableAction = isBusy || deletingId !== null;
-                const warehouseName = mapWarehouse.get(tool.warehouseId) || tool.warehouseName || "不明";
+                const currentStatus = toEditableStatus(tool.baseStatus ?? tool.status);
+                const isStatusEditing = statusEditingId === tool.id;
                 return (
                   <tr key={tool.id}>
-                    <Td>
-                      {isEditing ? (
-                        <Input value={editingName} onChange={(e) => setEditingName(e.target.value)} disabled={isBusy} />
-                      ) : (
-                        tool.name
-                      )}
-                    </Td>
+                    <Td>{tool.name}</Td>
                     <Td>{tool.assetNo}</Td>
                     <Td>
-                      {isEditing ? (
-                        <select
-                          value={editingWarehouseId}
-                          onChange={(e) => setEditingWarehouseId(e.target.value)}
-                          disabled={isBusy}
-                          style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
-                        >
-                          {warehouses.map((warehouse) => (
-                            <option key={warehouse.id} value={warehouse.id}>
-                              {warehouse.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        warehouseName
-                      )}
+                      <select
+                        value={tool.warehouseId}
+                        onChange={(e) => onChangeWarehouse(tool, e.target.value)}
+                        disabled={disableAction}
+                        style={selectStyle}
+                      >
+                        {warehouses.map((warehouse) => (
+                          <option key={warehouse.id} value={warehouse.id}>
+                            {warehouse.name}
+                          </option>
+                        ))}
+                      </select>
                     </Td>
                     <Td>
-                      <StatusBadge status={tool.status} />
-                    </Td>
-                    <Td>
-                      {isEditing ? (
+                      {isStatusEditing && !disableAction ? (
                         <select
-                          value={editingBaseStatus}
-                          onChange={(e) => setEditingBaseStatus(e.target.value as BaseStatus)}
-                          disabled={isBusy}
-                          style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
+                          autoFocus
+                          value={currentStatus}
+                          onBlur={() => setStatusEditingId((prev) => (prev === tool.id ? null : prev))}
+                          onChange={(e) => {
+                            setStatusEditingId(null);
+                            onChangeStatus(tool, e.target.value as EditableStatus);
+                          }}
+                          disabled={disableAction}
+                          style={selectStyle}
                         >
-                          {baseStatusOptions.map((option) => (
+                          {statusOptions.map((option) => (
                             <option key={option} value={option}>
-                              {option}
+                              {statusLabelJa[option]}
                             </option>
                           ))}
                         </select>
                       ) : (
-                        <StatusBadge status={tool.baseStatus} />
+                        <button
+                          type="button"
+                          onClick={() => setStatusEditingId(tool.id)}
+                          disabled={disableAction}
+                          style={{ ...badgeButtonStyle, cursor: disableAction ? "not-allowed" : "pointer" }}
+                        >
+                          <StatusBadge status={currentStatus} />
+                        </button>
                       )}
                     </Td>
                     <Td>
-                      {isEditing ? (
-                        <ActionMenu
-                          disabled={disableAction}
-                          items={[
-                            { key: "save", label: "保存", onClick: () => void onSave(tool.id), disabled: disableAction },
-                            { key: "cancel", label: "キャンセル", onClick: onCancelEdit, disabled: disableAction },
-                          ]}
-                        />
-                      ) : (
-                        <ActionMenu
-                          disabled={disableAction}
-                          items={[
-                            { key: "edit", label: "編集", onClick: () => onStartEdit(tool), disabled: disableAction },
-                            {
-                              key: "delete",
-                              label: deletingId === tool.id ? "削除中..." : "削除",
-                              onClick: () => void onDelete(tool),
-                              danger: true,
-                              disabled: disableAction,
-                            },
-                          ]}
-                        />
-                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => void onDelete(tool)}
+                        disabled={disableAction}
+                        style={{ borderColor: "#ef4444", color: "#b91c1c" }}
+                      >
+                        {deletingId === tool.id ? "削除中..." : "削除"}
+                      </Button>
                     </Td>
                   </tr>
                 );
@@ -565,75 +566,74 @@ export default function AdminToolsPage() {
 
         <div className="mobile-cards" style={{ padding: 12 }}>
           {tools.map((tool) => {
-            const isEditing = editingId === tool.id;
             const isBusy = submitting.has(tool.id);
             const disableAction = isBusy || deletingId !== null;
-            const warehouseName = mapWarehouse.get(tool.warehouseId) || tool.warehouseName || "不明";
+            const currentStatus = toEditableStatus(tool.baseStatus ?? tool.status);
+            const isStatusEditing = statusEditingId === tool.id;
             return (
               <article key={tool.id} className="card-surface" style={{ padding: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
                   <strong>{tool.name}</strong>
-                  {isEditing ? (
-                    <ActionMenu
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => void onDelete(tool)}
+                    disabled={disableAction}
+                    style={{ borderColor: "#ef4444", color: "#b91c1c" }}
+                  >
+                    {deletingId === tool.id ? "削除中..." : "削除"}
+                  </Button>
+                </div>
+
+                <div style={{ marginTop: 8, fontSize: 13 }}>工具ID: {tool.assetNo}</div>
+
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫</div>
+                  <select
+                    value={tool.warehouseId}
+                    onChange={(e) => onChangeWarehouse(tool, e.target.value)}
+                    disabled={disableAction}
+                    style={selectStyle}
+                  >
+                    {warehouses.map((warehouse) => (
+                      <option key={warehouse.id} value={warehouse.id}>
+                        {warehouse.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>状態</div>
+                  {isStatusEditing && !disableAction ? (
+                    <select
+                      autoFocus
+                      value={currentStatus}
+                      onBlur={() => setStatusEditingId((prev) => (prev === tool.id ? null : prev))}
+                      onChange={(e) => {
+                        setStatusEditingId(null);
+                        onChangeStatus(tool, e.target.value as EditableStatus);
+                      }}
                       disabled={disableAction}
-                      items={[
-                        { key: "save", label: "保存", onClick: () => void onSave(tool.id), disabled: disableAction },
-                        { key: "cancel", label: "キャンセル", onClick: onCancelEdit, disabled: disableAction },
-                      ]}
-                    />
+                      style={selectStyle}
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {statusLabelJa[option]}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
-                    <ActionMenu
+                    <button
+                      type="button"
+                      onClick={() => setStatusEditingId(tool.id)}
                       disabled={disableAction}
-                      items={[
-                        { key: "edit", label: "編集", onClick: () => onStartEdit(tool), disabled: disableAction },
-                        {
-                          key: "delete",
-                          label: deletingId === tool.id ? "削除中..." : "削除",
-                          onClick: () => void onDelete(tool),
-                          danger: true,
-                          disabled: disableAction,
-                        },
-                      ]}
-                    />
+                      style={{ ...badgeButtonStyle, cursor: disableAction ? "not-allowed" : "pointer" }}
+                    >
+                      <StatusBadge status={currentStatus} />
+                    </button>
                   )}
                 </div>
-                <div style={{ marginTop: 8, fontSize: 13 }}>工具ID: {tool.assetNo}</div>
-                <div style={{ marginTop: 4, fontSize: 13 }}>
-                  倉庫: {isEditing ? mapWarehouse.get(editingWarehouseId) || "不明" : warehouseName}
-                </div>
-                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <StatusBadge status={tool.status} />
-                  <StatusBadge status={isEditing ? editingBaseStatus : tool.baseStatus} />
-                </div>
-                {isEditing ? (
-                  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                    <Input value={editingName} onChange={(e) => setEditingName(e.target.value)} disabled={isBusy} />
-                    <select
-                      value={editingWarehouseId}
-                      onChange={(e) => setEditingWarehouseId(e.target.value)}
-                      disabled={isBusy}
-                      style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
-                    >
-                      {warehouses.map((warehouse) => (
-                        <option key={warehouse.id} value={warehouse.id}>
-                          {warehouse.name}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={editingBaseStatus}
-                      onChange={(e) => setEditingBaseStatus(e.target.value as BaseStatus)}
-                      disabled={isBusy}
-                      style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1" }}
-                    >
-                      {baseStatusOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
               </article>
             );
           })}

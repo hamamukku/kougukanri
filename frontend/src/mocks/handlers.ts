@@ -7,6 +7,7 @@ type DisplayStatus = "AVAILABLE" | "LOANED" | "RESERVED" | "BROKEN" | "REPAIR";
 type Warehouse = {
   id: string;
   name: string;
+  warehouseNo?: string | null;
 };
 
 type Tool = {
@@ -64,8 +65,8 @@ let nextLoanItemNo = 1;
 let nextAuditNo = 1;
 
 let warehouses: Warehouse[] = [
-  { id: "w1", name: "Main Warehouse" },
-  { id: "w2", name: "Sub Warehouse" },
+  { id: "w1", name: "Main Warehouse", warehouseNo: "WH-001" },
+  { id: "w2", name: "Sub Warehouse", warehouseNo: null },
 ];
 
 let tools: Tool[] = [
@@ -672,11 +673,12 @@ export const handlers = [
 
     const obj = readBody(body);
     const name = typeof obj.name === "string" ? obj.name.trim() : "";
+    const warehouseNo = typeof obj.warehouseNo === "string" ? obj.warehouseNo.trim() : "";
     if (!name) {
       return errorResponse(400, "INVALID_REQUEST", "name is required");
     }
 
-    const warehouse = { id: `w-${nextWarehouseNo++}`, name };
+    const warehouse = { id: `w-${nextWarehouseNo++}`, name, warehouseNo: warehouseNo || null };
     warehouses = [warehouse, ...warehouses];
 
     addAuditLog("create_warehouse", "warehouse", warehouse.id, auth.user.id, warehouse);

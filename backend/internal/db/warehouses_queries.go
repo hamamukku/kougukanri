@@ -2,12 +2,13 @@ package db
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 )
 
 const listWarehousesQuery = `
-SELECT id, name, created_at, updated_at
+SELECT id, name, warehouse_no, created_at, updated_at
 FROM warehouses
 ORDER BY name ASC
 `
@@ -22,7 +23,7 @@ func (q *Queries) ListWarehouses(ctx context.Context) ([]Warehouse, error) {
 	items := make([]Warehouse, 0)
 	for rows.Next() {
 		var i Warehouse
-		if err := rows.Scan(&i.ID, &i.Name, &i.CreatedAt, &i.UpdatedAt); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -33,25 +34,27 @@ func (q *Queries) ListWarehouses(ctx context.Context) ([]Warehouse, error) {
 const createWarehouseQuery = `
 INSERT INTO warehouses (
     name,
+    warehouse_no,
     created_at,
     updated_at
 ) VALUES (
     $1,
+    NULLIF($2::text, ''),
     NOW(),
     NOW()
 )
-RETURNING id, name, created_at, updated_at
+RETURNING id, name, warehouse_no, created_at, updated_at
 `
 
-func (q *Queries) CreateWarehouse(ctx context.Context, name string) (Warehouse, error) {
-	row := q.db.QueryRowContext(ctx, createWarehouseQuery, name)
+func (q *Queries) CreateWarehouse(ctx context.Context, name string, warehouseNo sql.NullString) (Warehouse, error) {
+	row := q.db.QueryRowContext(ctx, createWarehouseQuery, name, warehouseNo)
 	var i Warehouse
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt, &i.UpdatedAt)
+	err := row.Scan(&i.ID, &i.Name, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
 }
 
 const getWarehouseByIDQuery = `
-SELECT id, name, created_at, updated_at
+SELECT id, name, warehouse_no, created_at, updated_at
 FROM warehouses
 WHERE id = $1
 `
@@ -59,7 +62,7 @@ WHERE id = $1
 func (q *Queries) GetWarehouseByID(ctx context.Context, id uuid.UUID) (Warehouse, error) {
 	row := q.db.QueryRowContext(ctx, getWarehouseByIDQuery, id)
 	var i Warehouse
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt, &i.UpdatedAt)
+	err := row.Scan(&i.ID, &i.Name, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
 }
 

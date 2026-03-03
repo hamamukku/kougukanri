@@ -51,10 +51,11 @@ type SignupRequest struct {
 }
 
 type Warehouse struct {
-	ID        uuid.UUID
-	Name      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          uuid.UUID
+	Name        string
+	WarehouseNo sql.NullString
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type Tool struct {

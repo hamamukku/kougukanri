@@ -11,12 +11,14 @@ import { clearAuthSession } from "../../../../src/utils/auth";
 type Warehouse = {
   id: string;
   name: string;
+  warehouseNo?: string | null;
 };
 
 export default function AdminWarehousesPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
+  const [warehouseNo, setWarehouseNo] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -62,12 +64,16 @@ export default function AdminWarehousesPage() {
     setSubmitting(true);
 
     try {
-      await apiFetchJson<{ id: string; name: string }>("/api/admin/warehouses", {
+      await apiFetchJson<{ id: string; name: string; warehouseNo?: string | null }>("/api/admin/warehouses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          warehouseNo: warehouseNo.trim() || undefined,
+        }),
       });
       setName("");
+      setWarehouseNo("");
       await loadData();
     } catch (e: unknown) {
       const message = handleApiError(e);
@@ -110,17 +116,38 @@ export default function AdminWarehousesPage() {
     <main>
       <h1>倉庫管理</h1>
 
-      <div className="card-surface" style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", marginBottom: 12, padding: 12 }}>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="倉庫名" />
-        <Button type="button" onClick={onAdd} disabled={submitting}>
-          {submitting ? "作成中..." : "作成"}
-        </Button>
+      <div
+        className="card-surface"
+        style={{
+          marginTop: 12,
+          display: "grid",
+          gap: 8,
+          alignItems: "end",
+          marginBottom: 12,
+          padding: 12,
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫名</div>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="倉庫名" />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫番号 (任意)</div>
+          <Input value={warehouseNo} onChange={(e) => setWarehouseNo(e.target.value)} placeholder="例: WH-001" />
+        </div>
+        <div>
+          <Button type="button" onClick={onAdd} disabled={submitting}>
+            {submitting ? "登録中..." : "登録"}
+          </Button>
+        </div>
       </div>
 
       <table className="card-surface" style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
             <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0 8px 12px" }}>倉庫名</th>
+            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>倉庫番号</th>
             <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
           </tr>
         </thead>
@@ -128,6 +155,7 @@ export default function AdminWarehousesPage() {
           {warehouses.map((warehouse) => (
             <tr key={warehouse.id}>
               <td style={{ padding: "8px 0 8px 12px" }}>{warehouse.name}</td>
+              <td style={{ padding: "8px 0" }}>{warehouse.warehouseNo && warehouse.warehouseNo.trim() ? warehouse.warehouseNo : "未設定"}</td>
               <td style={{ padding: "8px 0" }}>
                 <ActionMenu
                   disabled={deletingId !== null}

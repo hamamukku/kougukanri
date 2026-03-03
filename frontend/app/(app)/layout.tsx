@@ -28,6 +28,7 @@ export default async function AppShellLayout({
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--background)", color: "var(--foreground)" }}>
+      <LoanBoxProvider>
       <header
         style={{
           display: "flex",
@@ -48,7 +49,6 @@ export default async function AppShellLayout({
         </div>
       </header>
 
-      <LoanBoxProvider>
         <AuthMeSync />
         <div className="layout-with-nav" style={{ display: "flex", alignItems: "stretch" }}>
           <aside

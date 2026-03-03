@@ -95,3 +95,37 @@ func (q *Queries) DeleteWarehouseByID(ctx context.Context, id uuid.UUID) (int64,
 	}
 	return affected, nil
 }
+
+const getWarehouseByNameQuery = `
+SELECT id, name, warehouse_no, created_at, updated_at
+FROM warehouses
+WHERE name = $1
+`
+
+func (q *Queries) GetWarehouseByName(ctx context.Context, name string) (Warehouse, error) {
+	row := q.db.QueryRowContext(ctx, getWarehouseByNameQuery, name)
+	var i Warehouse
+	err := row.Scan(&i.ID, &i.Name, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}
+
+type UpdateWarehouseNoParams struct {
+	ID          uuid.UUID
+	WarehouseNo sql.NullString
+}
+
+const updateWarehouseNoQuery = `
+UPDATE warehouses
+SET
+    warehouse_no = NULLIF($2::text, ''),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, warehouse_no, created_at, updated_at
+`
+
+func (q *Queries) UpdateWarehouseNo(ctx context.Context, arg UpdateWarehouseNoParams) (Warehouse, error) {
+	row := q.db.QueryRowContext(ctx, updateWarehouseNoQuery, arg.ID, arg.WarehouseNo)
+	var i Warehouse
+	err := row.Scan(&i.ID, &i.Name, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}

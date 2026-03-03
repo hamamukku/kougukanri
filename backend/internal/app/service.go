@@ -788,6 +788,25 @@ type CreateToolBulkResult struct {
 	Tools []db.Tool
 }
 
+type ImportExcelRow struct {
+	Row           int
+	WarehouseName string
+	WarehouseNo   string
+	ToolName      string
+}
+
+type ImportExcelRowError struct {
+	Row     int
+	Field   string
+	Message string
+}
+
+type ImportExcelResult struct {
+	WarehousesCreated int
+	WarehousesUpdated int
+	ToolsCreated      int
+}
+
 func bulkRowError(row int, field, message string) BulkToolRowError {
 	return BulkToolRowError{
 		Row:     row,
@@ -901,6 +920,201 @@ func (s *Service) CreateToolsBulk(ctx context.Context, actorID uuid.UUID, items 
 	}
 
 	return CreateToolBulkResult{Tools: created}, nil
+}
+
+func importExcelRowError(row int, field, message string) ImportExcelRowError {
+	return ImportExcelRowError{
+		Row:     row,
+		Field:   field,
+		Message: message,
+	}
+}
+
+func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uuid.UUID, rows []ImportExcelRow) (ImportExcelResult, error) {
+	if len(rows) == 0 {
+		return ImportExcelResult{}, apierr.InvalidRequest("rows is required", nil)
+	}
+
+	rowErrors := make([]ImportExcelRowError, 0)
+	normalizedRows := make([]ImportExcelRow, 0, len(rows))
+	warehouseNoByName := make(map[string]string)
+
+	for _, row := range rows {
+		normalized := ImportExcelRow{
+			Row:           row.Row,
+			WarehouseName: strings.TrimSpace(row.WarehouseName),
+			WarehouseNo:   strings.TrimSpace(row.WarehouseNo),
+			ToolName:      strings.TrimSpace(row.ToolName),
+		}
+
+		if normalized.WarehouseName == "" {
+			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseName", "warehouseName is required"))
+		}
+		if normalized.ToolName == "" {
+			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "toolName", "toolName is required"))
+		}
+		if normalized.WarehouseName != "" && normalized.WarehouseNo != "" {
+			if seen, ok := warehouseNoByName[normalized.WarehouseName]; ok && seen != normalized.WarehouseNo {
+				rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseNo", "warehouseNo conflicts in the same file"))
+			} else {
+				warehouseNoByName[normalized.WarehouseName] = normalized.WarehouseNo
+			}
+		}
+
+		normalizedRows = append(normalizedRows, normalized)
+	}
+
+	if len(rowErrors) > 0 {
+		return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
+			"rowErrors": rowErrors,
+		})
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ImportExcelResult{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	existingWarehouses, err := qtx.ListWarehouses(ctx)
+	if err != nil {
+		return ImportExcelResult{}, err
+	}
+	warehouseByName := make(map[string]db.Warehouse, len(existingWarehouses))
+	for _, warehouse := range existingWarehouses {
+		warehouseByName[warehouse.Name] = warehouse
+	}
+
+	for _, row := range normalizedRows {
+		existing, ok := warehouseByName[row.WarehouseName]
+		if !ok || row.WarehouseNo == "" {
+			continue
+		}
+		if existing.WarehouseNo.Valid && strings.TrimSpace(existing.WarehouseNo.String) != "" && existing.WarehouseNo.String != row.WarehouseNo {
+			rowErrors = append(rowErrors, importExcelRowError(row.Row, "warehouseNo", "warehouseNo conflicts with existing warehouse"))
+		}
+	}
+	if len(rowErrors) > 0 {
+		return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
+			"rowErrors": rowErrors,
+		})
+	}
+
+	result := ImportExcelResult{}
+	createdWarehouseIDs := make([]uuid.UUID, 0)
+	updatedWarehouseIDs := make([]uuid.UUID, 0)
+	createdToolIDs := make([]uuid.UUID, 0)
+
+	for _, row := range normalizedRows {
+		currentWarehouse, exists := warehouseByName[row.WarehouseName]
+		if !exists {
+			createWarehouseNo := sql.NullString{}
+			if row.WarehouseNo != "" {
+				createWarehouseNo = sql.NullString{String: row.WarehouseNo, Valid: true}
+			}
+
+			createdWarehouse, createErr := qtx.CreateWarehouse(ctx, row.WarehouseName, createWarehouseNo)
+			if createErr != nil {
+				var pqErr *pq.Error
+				if stdErrors.As(createErr, &pqErr) && string(pqErr.Code) == "23505" && pqErr.Constraint == "warehouses_name_key" {
+					createdWarehouse, createErr = qtx.GetWarehouseByName(ctx, row.WarehouseName)
+				}
+			}
+			if createErr != nil {
+				if mapped := mapPQError(createErr); mapped != nil {
+					return ImportExcelResult{}, mapped
+				}
+				return ImportExcelResult{}, createErr
+			}
+
+			currentWarehouse = createdWarehouse
+			warehouseByName[row.WarehouseName] = createdWarehouse
+			result.WarehousesCreated++
+			createdWarehouseIDs = append(createdWarehouseIDs, createdWarehouse.ID)
+		}
+
+		if row.WarehouseNo != "" && (!currentWarehouse.WarehouseNo.Valid || strings.TrimSpace(currentWarehouse.WarehouseNo.String) == "") {
+			updatedWarehouse, updateErr := qtx.UpdateWarehouseNo(ctx, db.UpdateWarehouseNoParams{
+				ID:          currentWarehouse.ID,
+				WarehouseNo: sql.NullString{String: row.WarehouseNo, Valid: true},
+			})
+			if updateErr != nil {
+				if mapped := mapPQError(updateErr); mapped != nil {
+					return ImportExcelResult{}, mapped
+				}
+				return ImportExcelResult{}, updateErr
+			}
+			currentWarehouse = updatedWarehouse
+			warehouseByName[row.WarehouseName] = updatedWarehouse
+			result.WarehousesUpdated++
+			updatedWarehouseIDs = append(updatedWarehouseIDs, updatedWarehouse.ID)
+		} else if row.WarehouseNo != "" && currentWarehouse.WarehouseNo.Valid && strings.TrimSpace(currentWarehouse.WarehouseNo.String) != "" && currentWarehouse.WarehouseNo.String != row.WarehouseNo {
+			return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
+				"rowErrors": []ImportExcelRowError{
+					importExcelRowError(row.Row, "warehouseNo", "warehouseNo conflicts with existing warehouse"),
+				},
+			})
+		}
+
+		createToolParams, normalizeErr := normalizeCreateToolParams("", row.ToolName, currentWarehouse.ID, BaseStatusAvailable, nil)
+		if normalizeErr != nil {
+			var apiError *apierr.APIError
+			if stdErrors.As(normalizeErr, &apiError) {
+				return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
+					"rowErrors": []ImportExcelRowError{
+						importExcelRowError(row.Row, "toolName", apiError.Message),
+					},
+				})
+			}
+			return ImportExcelResult{}, normalizeErr
+		}
+
+		tool, createToolErr := qtx.CreateTool(ctx, createToolParams)
+		if createToolErr != nil {
+			if mapped := mapPQError(createToolErr); mapped != nil {
+				return ImportExcelResult{}, mapped
+			}
+			return ImportExcelResult{}, createToolErr
+		}
+		result.ToolsCreated++
+		createdToolIDs = append(createdToolIDs, tool.ID)
+	}
+
+	limitedWarehouseCreatedIDs := createdWarehouseIDs
+	if len(limitedWarehouseCreatedIDs) > 100 {
+		limitedWarehouseCreatedIDs = limitedWarehouseCreatedIDs[:100]
+	}
+	limitedWarehouseUpdatedIDs := updatedWarehouseIDs
+	if len(limitedWarehouseUpdatedIDs) > 100 {
+		limitedWarehouseUpdatedIDs = limitedWarehouseUpdatedIDs[:100]
+	}
+	limitedToolIDs := createdToolIDs
+	if len(limitedToolIDs) > 200 {
+		limitedToolIDs = limitedToolIDs[:200]
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "import_excel_warehouses_tools", "import", uuid.Nil, map[string]any{
+		"warehousesCreated":   result.WarehousesCreated,
+		"warehousesUpdated":   result.WarehousesUpdated,
+		"toolsCreated":        result.ToolsCreated,
+		"warehouseIdsCreated": limitedWarehouseCreatedIDs,
+		"warehouseIdsUpdated": limitedWarehouseUpdatedIDs,
+		"toolIdsCreated":      limitedToolIDs,
+		"warehouseIdCount":    len(createdWarehouseIDs) + len(updatedWarehouseIDs),
+		"toolIdCount":         len(createdToolIDs),
+	}); err != nil {
+		return ImportExcelResult{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return ImportExcelResult{}, mapped
+		}
+		return ImportExcelResult{}, err
+	}
+
+	return result, nil
 }
 
 type UpdateToolInput struct {

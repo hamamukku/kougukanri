@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/xuri/excelize/v2"
 
 	"kougukanri/backend/internal/app"
 	"kougukanri/backend/internal/auth"
@@ -57,6 +58,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	admin.GET("/audit-logs", h.listAuditLogs)
 	admin.POST("/tools", h.createTool)
 	admin.POST("/tools/bulk", h.createToolsBulk)
+	admin.POST("/import/excel", h.importWarehousesToolsExcel)
 	admin.DELETE("/tools/:toolId", h.deleteTool)
 	admin.PATCH("/tools/:toolId", h.patchTool)
 	admin.POST("/departments", h.createDepartment)
@@ -575,6 +577,143 @@ func (h *Handler) createToolsBulk(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"items": respItems,
+	})
+}
+
+func normalizeImportExcelHeader(v string) string {
+	replacer := strings.NewReplacer(" ", "", "　", "", "_", "", "-", "")
+	return strings.ToLower(replacer.Replace(strings.TrimSpace(v)))
+}
+
+func getExcelCellValue(row []string, index int) string {
+	if index < 0 || index >= len(row) {
+		return ""
+	}
+	return strings.TrimSpace(row[index])
+}
+
+type importExcelColumnIndexes struct {
+	WarehouseName int
+	WarehouseNo   int
+	ToolName      int
+	HasHeader     bool
+}
+
+func detectImportExcelColumnIndexes(firstRow []string) importExcelColumnIndexes {
+	indexes := importExcelColumnIndexes{
+		WarehouseName: 0,
+		WarehouseNo:   1,
+		ToolName:      2,
+		HasHeader:     false,
+	}
+
+	for i, cell := range firstRow {
+		switch normalizeImportExcelHeader(cell) {
+		case "倉庫名", "warehousename":
+			indexes.WarehouseName = i
+			indexes.HasHeader = true
+		case "倉庫番号", "warehouseno":
+			indexes.WarehouseNo = i
+			indexes.HasHeader = true
+		case "工具名", "toolname":
+			indexes.ToolName = i
+			indexes.HasHeader = true
+		}
+	}
+
+	return indexes
+}
+
+func parseImportExcelRows(rows [][]string) []app.ImportExcelRow {
+	if len(rows) == 0 {
+		return []app.ImportExcelRow{}
+	}
+
+	indexes := detectImportExcelColumnIndexes(rows[0])
+	startIndex := 0
+	if indexes.HasHeader {
+		startIndex = 1
+	}
+
+	result := make([]app.ImportExcelRow, 0, len(rows))
+	for i := startIndex; i < len(rows); i++ {
+		row := rows[i]
+		warehouseName := getExcelCellValue(row, indexes.WarehouseName)
+		warehouseNo := getExcelCellValue(row, indexes.WarehouseNo)
+		toolName := getExcelCellValue(row, indexes.ToolName)
+
+		if warehouseName == "" && warehouseNo == "" && toolName == "" {
+			continue
+		}
+
+		result = append(result, app.ImportExcelRow{
+			Row:           i + 1,
+			WarehouseName: warehouseName,
+			WarehouseNo:   warehouseNo,
+			ToolName:      toolName,
+		})
+	}
+
+	return result
+}
+
+func (h *Handler) importWarehousesToolsExcel(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("file is required", nil))
+		return
+	}
+	if !strings.HasSuffix(strings.ToLower(strings.TrimSpace(fileHeader.Filename)), ".xlsx") {
+		WriteError(c, apierr.InvalidRequest("file must be .xlsx", nil))
+		return
+	}
+
+	file, err := fileHeader.Open()
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("failed to open uploaded file", nil))
+		return
+	}
+	defer file.Close()
+
+	workbook, err := excelize.OpenReader(file)
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid xlsx file", nil))
+		return
+	}
+	defer workbook.Close()
+
+	sheetName := strings.TrimSpace(c.Query("sheet"))
+	if sheetName == "" {
+		sheets := workbook.GetSheetList()
+		if len(sheets) == 0 {
+			WriteError(c, apierr.InvalidRequest("xlsx has no sheets", nil))
+			return
+		}
+		sheetName = sheets[0]
+	}
+
+	rawRows, err := workbook.GetRows(sheetName)
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("sheet is invalid", map[string]any{"sheet": sheetName}))
+		return
+	}
+	rows := parseImportExcelRows(rawRows)
+	if len(rows) == 0 {
+		WriteError(c, apierr.InvalidRequest("no import rows found", nil))
+		return
+	}
+
+	result, err := h.svc.ImportWarehousesToolsFromExcel(c.Request.Context(), user.ID, rows)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"warehousesCreated": result.WarehousesCreated,
+		"warehousesUpdated": result.WarehousesUpdated,
+		"toolsCreated":      result.ToolsCreated,
 	})
 }
 

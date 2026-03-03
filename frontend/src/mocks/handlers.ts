@@ -597,6 +597,35 @@ export const handlers = [
     );
   }),
 
+  http.post("/api/admin/import/excel", async ({ request }) => {
+    const auth = authenticate(request, "admin");
+    if ("error" in auth) return auth.error;
+
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return errorResponse(400, "INVALID_REQUEST", "invalid form-data");
+    }
+
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      return errorResponse(400, "INVALID_REQUEST", "file is required");
+    }
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      return errorResponse(400, "INVALID_REQUEST", "file must be .xlsx");
+    }
+
+    return HttpResponse.json(
+      {
+        warehousesCreated: 0,
+        warehousesUpdated: 0,
+        toolsCreated: 0,
+      },
+      { status: 201 },
+    );
+  }),
+
   http.patch("/api/admin/tools/:toolId", async ({ request, params }) => {
     const auth = authenticate(request, "admin");
     if ("error" in auth) return auth.error;

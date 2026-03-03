@@ -14,17 +14,18 @@ export default function SideNav({ role }: Props) {
   const count = selectedToolIds.size;
 
   const userMenu: MenuItem[] = [
-    { href: "/tools", label: "工具一覧" },
-    { href: "/loan-box", label: "貸出ボックス", withCount: true },
-    { href: "/my-loans", label: "貸出一覧" },
-    { href: "/my-page", label: "マイページ" },
+    { href: "/tools", label: "\u5de5\u5177\u4e00\u89a7" },
+    { href: "/loan-box", label: "\u8cb8\u51fa\u30dc\u30c3\u30af\u30b9", withCount: true },
+    { href: "/my-loans", label: "\u8cb8\u51fa\u4e00\u89a7" },
+    { href: "/my-page", label: "\u30de\u30a4\u30da\u30fc\u30b8" },
   ];
 
   const adminMenu: MenuItem[] = [
-    { href: "/admin/returns", label: "返却承認" },
-    { href: "/admin/tools", label: "工具管理" },
-    { href: "/admin/users", label: "ユーザー・部署管理" },
-    { href: "/admin/warehouses", label: "倉庫管理" },
+    { href: "/admin/returns", label: "\u8fd4\u5374\u627f\u8a8d" },
+    { href: "/admin/tools", label: "\u5de5\u5177\u7ba1\u7406" },
+    { href: "/admin/users", label: "\u30e6\u30fc\u30b6\u30fc\u30fb\u90e8\u7f72\u7ba1\u7406" },
+    { href: "/admin/warehouses", label: "\u5009\u5eab\u7ba1\u7406" },
+    { href: "/admin/import", label: "Excel\u53d6\u8fbc" },
   ];
 
   const menu = role === "admin" ? adminMenu : userMenu;

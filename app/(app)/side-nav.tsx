@@ -22,10 +22,9 @@ export default function SideNav({ role }: Props) {
 
   const adminMenu: MenuItem[] = [
     { href: "/admin/returns", label: "返却承認" },
-    { href: "/admin/users", label: "ユーザー管理" },
-    { href: "/admin/warehouses", label: "倉庫管理" },
     { href: "/admin/tools", label: "工具管理" },
-    { href: "/admin/audit-logs", label: "監査ログ" },
+    { href: "/admin/users", label: "ユーザー・部署管理" },
+    { href: "/admin/warehouses", label: "倉庫管理" },
   ];
 
   const menu = role === "admin" ? adminMenu : userMenu;

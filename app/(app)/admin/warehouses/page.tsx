@@ -162,8 +162,7 @@ export default function AdminWarehousesPage() {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ID</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>倉庫名</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0 8px 12px" }}>倉庫名</th>
               <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
             </tr>
           </thead>
@@ -173,8 +172,7 @@ export default function AdminWarehousesPage() {
               const isBusy = submitting.has(warehouse.id);
               return (
                 <tr key={warehouse.id}>
-                  <td style={{ padding: "8px 0" }}>{warehouse.id}</td>
-                  <td style={{ padding: "8px 0" }}>
+                  <td style={{ padding: "8px 0 8px 12px" }}>
                     {isEditing ? <Input value={editingName} onChange={(e) => setEditingName(e.target.value)} disabled={isBusy} /> : warehouse.name}
                   </td>
                   <td style={{ padding: "8px 0" }}>

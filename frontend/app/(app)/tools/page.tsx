@@ -242,7 +242,14 @@ export default function ToolsPage() {
               const checked = hasInSelection(tool.id);
               const warehouseName = warehouseNameById.get(tool.warehouseId) ?? tool.warehouseName ?? "不明";
               return (
-                <tr key={tool.id}>
+                <tr
+                  key={tool.id}
+                  style={{
+                    background: checked ? "#dde6ef" : "transparent",
+                    boxShadow: checked ? "inset 4px 0 0 #0c4a6e" : "none",
+                    transition: "background-color 120ms ease",
+                  }}
+                >
                   <Td>{tool.name}</Td>
                   <Td>{tool.assetNo}</Td>
                   <Td>{warehouseName}</Td>
@@ -270,7 +277,15 @@ export default function ToolsPage() {
           const checked = hasInSelection(tool.id);
           const warehouseName = warehouseNameById.get(tool.warehouseId) ?? tool.warehouseName ?? "不明";
           return (
-            <article key={tool.id} className="card-surface" style={{ padding: 12 }}>
+            <article
+              key={tool.id}
+              className="card-surface"
+              style={{
+                padding: 12,
+                background: checked ? "#dde6ef" : undefined,
+                borderColor: checked ? "#9fb3c7" : undefined,
+              }}
+            >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                 <strong>{tool.name}</strong>
                 <StatusBadge status={tool.status} />

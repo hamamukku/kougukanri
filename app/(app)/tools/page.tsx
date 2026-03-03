@@ -237,7 +237,14 @@ export default function ToolsPage() {
               const disabled = !isSelectable(tool.status);
               const checked = hasInSelection(tool.id);
               return (
-                <tr key={tool.id}>
+                <tr
+                  key={tool.id}
+                  style={{
+                    background: checked ? "#dde6ef" : "transparent",
+                    boxShadow: checked ? "inset 4px 0 0 #0c4a6e" : "none",
+                    transition: "background-color 120ms ease",
+                  }}
+                >
                   <Td>{tool.name}</Td>
                   <Td>{tool.assetNo}</Td>
                   <Td>{warehouseNameById.get(tool.warehouseId) ?? "不明"}</Td>
@@ -264,7 +271,15 @@ export default function ToolsPage() {
           const disabled = !isSelectable(tool.status);
           const checked = hasInSelection(tool.id);
           return (
-            <article key={tool.id} className="card-surface" style={{ padding: 12 }}>
+            <article
+              key={tool.id}
+              className="card-surface"
+              style={{
+                padding: 12,
+                background: checked ? "#dde6ef" : undefined,
+                borderColor: checked ? "#9fb3c7" : undefined,
+              }}
+            >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <strong>{tool.name}</strong>
                 <StatusBadge status={tool.status} />

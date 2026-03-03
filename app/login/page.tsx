@@ -9,10 +9,10 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 export default function LoginPage() {
   const router = useRouter();
   const [nextPath] = useState(() => {
-    if (typeof window === "undefined") return "/tools";
+    if (typeof window === "undefined") return "";
     const query = new URLSearchParams(window.location.search);
-    const raw = query.get("next") || "/tools";
-    return raw.startsWith("/") ? raw : "/tools";
+    const raw = query.get("next") || "";
+    return raw.startsWith("/") ? raw : "";
   });
 
   const setCookie = (name: string, value: string) => {
@@ -23,7 +23,8 @@ export default function LoginPage() {
     setCookie("auth", "1");
     setCookie("role", role);
     setCookie("username", encodeURIComponent(username));
-    router.push(nextPath);
+    const fallbackPath = role === "admin" ? "/admin/returns" : "/tools";
+    router.push(nextPath || fallbackPath);
   };
 
   return (

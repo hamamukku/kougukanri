@@ -22,7 +22,7 @@ type MeResponse = {
 export default function LoginPage() {
   const router = useRouter();
 
-  const [nextPath, setNextPath] = useState("/tools");
+  const [nextPath, setNextPath] = useState("");
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -30,8 +30,8 @@ export default function LoginPage() {
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    const raw = query.get("next") || "/tools";
-    setNextPath(raw.startsWith("/") ? raw : "/tools");
+    const raw = query.get("next") || "";
+    setNextPath(raw.startsWith("/") ? raw : "");
   }, []);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -58,7 +58,8 @@ export default function LoginPage() {
         userName: me.userName,
       });
 
-      router.push(nextPath);
+      const fallbackPath = me.role === "admin" ? "/admin/returns" : "/tools";
+      router.push(nextPath || fallbackPath);
       router.refresh();
     } catch (e: unknown) {
       clearAuthSession();

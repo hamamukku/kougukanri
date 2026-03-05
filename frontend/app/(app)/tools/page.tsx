@@ -1,3 +1,4 @@
+// frontend/app/(app)/tools/page.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -137,6 +138,15 @@ export default function ToolsPage() {
     else removeFromSelection(toolId);
   };
 
+  // ✅ チェックボックスを大きくする（デスクトップ/モバイル共通）
+  const checkboxStyle: React.CSSProperties = {
+    width: 22,
+    height: 22,
+    transform: "scale(1.25)",
+    transformOrigin: "center",
+    cursor: "pointer",
+  };
+
   if (loading) return <main>loading...</main>;
   if (err)
     return (
@@ -262,6 +272,7 @@ export default function ToolsPage() {
                       checked={checked}
                       disabled={disabled}
                       onChange={(e) => onToggle(tool.id, e.target.checked)}
+                      style={checkboxStyle}
                     />
                   </Td>
                 </tr>
@@ -306,6 +317,7 @@ export default function ToolsPage() {
                   checked={checked}
                   disabled={disabled}
                   onChange={(e) => onToggle(tool.id, e.target.checked)}
+                  style={checkboxStyle}
                 />
                 貸出ボックスに追加
               </label>

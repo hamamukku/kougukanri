@@ -1,3 +1,4 @@
+// frontend/app/login/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -48,7 +49,6 @@ export default function LoginPage() {
         body: JSON.stringify({ loginId, password }),
       });
 
-      // Save token first so /api/auth/me can reuse the same auth path and header policy.
       writeAuthSession({ token: login.token, role: login.role, userName: login.userName });
 
       const me = await apiFetchJson<MeResponse>("/api/auth/me");
@@ -69,30 +69,64 @@ export default function LoginPage() {
     }
   };
 
+  const buttonStyle: React.CSSProperties = {
+    width: "100%",
+    fontSize: 16,
+    padding: "12px 12px",
+  };
+
   return (
-    <main style={{ padding: 24, maxWidth: 420 }}>
-      <h1>ログイン</h1>
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>Login ID (username or email)</div>
-          <Input value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="admin" />
-        </div>
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 520 }}>
+        <h1 style={{ fontSize: 30, margin: "0 0 18px", textAlign: "center" }}>ログイン</h1>
 
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>Password</div>
-          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        </div>
+        <form onSubmit={onSubmit} style={{ display: "grid", gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 14, marginBottom: 6 }}>ログインID（ユーザー名またはメール）</div>
+            <Input
+              value={loginId}
+              onChange={(e) => setLoginId(e.target.value)}
+              placeholder="例: admin"
+              style={{ fontSize: 16, padding: "12px 12px" }}
+            />
+          </div>
 
-        <Button type="submit" disabled={submitting || !loginId.trim() || !password}>
-          {submitting ? "ログイン中..." : "ログイン"}
-        </Button>
-      </form>
+          <div>
+            <div style={{ fontSize: 14, marginBottom: 6 }}>パスワード</div>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ fontSize: 16, padding: "12px 12px" }}
+            />
+          </div>
 
-      <div style={{ marginTop: 12 }}>
-        <Link href="/signup-request">アカウント申請</Link>
+          <Button type="submit" disabled={submitting || !loginId.trim() || !password} style={buttonStyle}>
+            {submitting ? "ログイン中..." : "ログイン"}
+          </Button>
+
+          {/* アカウント申請：ログインボタンと同規格のボタン化 */}
+          <Link href="/signup-request" style={{ textDecoration: "none" }}>
+            <Button type="button" style={buttonStyle}>
+              アカウント申請
+            </Button>
+          </Link>
+        </form>
+
+        {error ? (
+          <p style={{ color: "#b91c1c", marginTop: 12, fontSize: 14, textAlign: "center" }}>
+            エラー: {error}
+          </p>
+        ) : null}
       </div>
-
-      {error ? <p style={{ color: "#b91c1c", marginTop: 12 }}>error: {error}</p> : null}
     </main>
   );
 }

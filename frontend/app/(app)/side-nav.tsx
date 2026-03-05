@@ -1,3 +1,4 @@
+// frontend/app/(app)/side-nav.tsx
 "use client";
 
 import Link from "next/link";
@@ -5,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { useLoanBox } from "../../src/state/loanBoxStore";
 
 type Props = { role: "user" | "admin" };
-
 type MenuItem = { href: string; label: string; withCount?: boolean };
 
 export default function SideNav({ role }: Props) {
@@ -14,26 +14,27 @@ export default function SideNav({ role }: Props) {
   const count = selectedToolIds.size;
 
   const userMenu: MenuItem[] = [
-    { href: "/tools", label: "\u5de5\u5177\u4e00\u89a7" },
-    { href: "/loan-box", label: "\u8cb8\u51fa\u30dc\u30c3\u30af\u30b9", withCount: true },
-    { href: "/my-loans", label: "\u8cb8\u51fa\u4e00\u89a7" },
-    { href: "/my-page", label: "\u30de\u30a4\u30da\u30fc\u30b8" },
+    { href: "/tools", label: "工具一覧" },
+    { href: "/loan-box", label: "貸出ボックス", withCount: true },
+    { href: "/my-loans", label: "貸出一覧" },
+    { href: "/my-page", label: "マイページ" },
   ];
 
   const adminMenu: MenuItem[] = [
-    { href: "/admin/returns", label: "\u8fd4\u5374\u627f\u8a8d" },
-    { href: "/admin/tools", label: "\u5de5\u5177\u7ba1\u7406" },
-    { href: "/admin/users", label: "\u30e6\u30fc\u30b6\u30fc\u30fb\u90e8\u7f72\u7ba1\u7406" },
-    { href: "/admin/warehouses", label: "\u5009\u5eab\u7ba1\u7406" },
-    { href: "/admin/import", label: "Excel\u53d6\u8fbc" },
+    { href: "/admin/returns", label: "返却承認" },
+    { href: "/admin/tools", label: "工具管理" },
+    { href: "/admin/users", label: "ユーザー・部署管理" },
+    { href: "/admin/warehouses", label: "倉庫管理" },
+    { href: "/admin/import", label: "Excel取込" },
   ];
 
   const menu = role === "admin" ? adminMenu : userMenu;
 
   return (
-    <nav style={{ display: "grid", gap: 8 }}>
+    <nav style={{ display: "grid", gap: 12 }}>
       {menu.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
         return (
           <Link
             key={item.href}
@@ -42,31 +43,40 @@ export default function SideNav({ role }: Props) {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              gap: 8,
-              padding: "9px 11px",
-              borderRadius: 10,
+              gap: 12,
+
+              // ✅ ボタン自体を拡大
+              padding: "14px 16px",
+              minHeight: 56,
+
+              borderRadius: 12,
               border: `1px solid ${active ? "#7dd3fc" : "#d8e2ec"}`,
               background: active ? "#e0f2fe" : "#ffffff",
               color: "#0f172a",
               textDecoration: "none",
-              fontWeight: active ? 700 : 500,
+
+              // ✅ 文字を拡大
+              fontSize: 18,
+              fontWeight: active ? 800 : 600,
+              lineHeight: 1.2,
             }}
           >
             <span>{item.label}</span>
+
             {item.withCount ? (
               <span
                 style={{
                   display: "inline-flex",
-                  minWidth: 22,
-                  height: 22,
+                  minWidth: 28,
+                  height: 28,
                   borderRadius: 999,
                   alignItems: "center",
                   justifyContent: "center",
-                  padding: "0 6px",
+                  padding: "0 8px",
                   background: "#f97316",
                   color: "#fff",
-                  fontSize: 12,
-                  fontWeight: 700,
+                  fontSize: 14,
+                  fontWeight: 800,
                 }}
               >
                 {count}

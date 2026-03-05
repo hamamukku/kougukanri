@@ -1,3 +1,4 @@
+// frontend/app/(app)/admin/tools/page.tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -87,6 +88,85 @@ function toEditableStatus(status: string): EditableStatus {
   }
 }
 
+function ConfirmModal(props: {
+  open: boolean;
+  title?: string;
+  message: string;
+  okText?: string;
+  cancelText?: string;
+  busy?: boolean;
+  dangerOk?: boolean;
+  onOk: () => void;
+  onCancel: () => void;
+}) {
+  if (!props.open) return null;
+
+  const modalBtnStyle: React.CSSProperties = {
+    minWidth: 140,
+    height: 52,
+    fontSize: 18,
+    fontWeight: 800,
+    padding: "0 20px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        zIndex: 9999,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !props.busy) props.onCancel();
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 560,
+          background: "#fff",
+          borderRadius: 14,
+          border: "1px solid #e2e8f0",
+          boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+          padding: 18,
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 10 }}>{props.title ?? "確認"}</div>
+
+        <div style={{ fontSize: 16, lineHeight: 1.7, color: "#0f172a" }}>{props.message}</div>
+
+        <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 18 }}>
+          <Button type="button" variant="ghost" onClick={props.onCancel} disabled={props.busy} style={modalBtnStyle}>
+            {props.cancelText ?? "戻る"}
+          </Button>
+
+          <Button
+            type="button"
+            variant={props.dangerOk ? "danger" : "primary"}
+            onClick={props.onOk}
+            disabled={props.busy}
+            style={modalBtnStyle}
+          >
+            {props.busy ? "処理中..." : props.okText ?? "OK"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminToolsPage() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -104,6 +184,11 @@ export default function AdminToolsPage() {
   const [statusEditingId, setStatusEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ✅ window.confirm をやめて、画面内モーダルにする
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Tool | null>(null);
+
   const router = useRouter();
 
   const handleApiError = useCallback(
@@ -166,8 +251,7 @@ export default function AdminToolsPage() {
         body: JSON.stringify({
           name: name.trim(),
           warehouseId,
-          // Backward-compatible API field name.
-          baseStatus: status,
+          baseStatus: status, // Backward-compatible API field name.
         }),
       });
       setName("");
@@ -303,23 +387,33 @@ export default function AdminToolsPage() {
     void patchToolInline(tool, { baseStatus: nextStatus }, { baseStatus: nextStatus });
   };
 
-  const onDelete = async (tool: Tool) => {
+  // ✅ 削除はまずモーダルを出す
+  const requestDelete = (tool: Tool) => {
+    if (deletingId || submitting.has(tool.id)) return;
+    setDeleteTarget(tool);
+    setDeleteConfirmOpen(true);
+  };
+
+  // ✅ モーダルで「削除する」押下後に実行
+  const doDeleteConfirmed = async () => {
+    if (!deleteTarget) return;
+    const tool = deleteTarget;
+
     if (deletingId || submitting.has(tool.id)) return;
 
-    const confirmed = window.confirm(`工具「${tool.name} (${tool.assetNo})」を本当に削除しますか？`);
-    if (!confirmed) return;
-
     setDeletingId(tool.id);
+    setErr(null);
+
     try {
-      await apiFetchJson<{ ok: boolean }>(`/api/admin/tools/${tool.id}`, {
-        method: "DELETE",
-      });
+      await apiFetchJson<{ ok: boolean }>(`/api/admin/tools/${tool.id}`, { method: "DELETE" });
       await loadData();
     } catch (e: unknown) {
       const message = handleApiError(e);
       if (message) setErr(message);
     } finally {
       setDeletingId(null);
+      setDeleteConfirmOpen(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -331,8 +425,30 @@ export default function AdminToolsPage() {
       </main>
     );
 
+  const deleteBusy = deletingId !== null;
+
   return (
     <main>
+      <ConfirmModal
+        open={deleteConfirmOpen}
+        title="削除の確認"
+        message={
+          deleteTarget
+            ? `工具「${deleteTarget.name}（${deleteTarget.assetNo}）」を本当に削除しますか？`
+            : "本当に削除しますか？"
+        }
+        okText="削除する"
+        cancelText="戻る"
+        dangerOk
+        busy={deleteBusy}
+        onOk={doDeleteConfirmed}
+        onCancel={() => {
+          if (deleteBusy) return;
+          setDeleteConfirmOpen(false);
+          setDeleteTarget(null);
+        }}
+      />
+
       <h1>工具管理</h1>
 
       <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
@@ -464,10 +580,9 @@ export default function AdminToolsPage() {
                     <Td>
                       <Button
                         type="button"
-                        variant="ghost"
-                        disabled={bulkRows.length <= 1}
+                        variant="danger"
+                        disabled={bulkRows.length <= 1 || deleteBusy}
                         onClick={() => setBulkRows((prev) => prev.filter((item) => item.key !== row.key))}
-                        style={{ borderColor: "#ef4444", color: "#b91c1c" }}
                       >
                         行を削除
                       </Button>
@@ -547,13 +662,7 @@ export default function AdminToolsPage() {
                       )}
                     </Td>
                     <Td>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => void onDelete(tool)}
-                        disabled={disableAction}
-                        style={{ borderColor: "#ef4444", color: "#b91c1c" }}
-                      >
+                      <Button type="button" variant="danger" onClick={() => requestDelete(tool)} disabled={disableAction}>
                         {deletingId === tool.id ? "削除中..." : "削除"}
                       </Button>
                     </Td>
@@ -574,13 +683,7 @@ export default function AdminToolsPage() {
               <article key={tool.id} className="card-surface" style={{ padding: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
                   <strong>{tool.name}</strong>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => void onDelete(tool)}
-                    disabled={disableAction}
-                    style={{ borderColor: "#ef4444", color: "#b91c1c" }}
-                  >
+                  <Button type="button" variant="danger" onClick={() => requestDelete(tool)} disabled={disableAction}>
                     {deletingId === tool.id ? "削除中..." : "削除"}
                   </Button>
                 </div>

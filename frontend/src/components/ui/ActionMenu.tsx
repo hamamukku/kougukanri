@@ -1,3 +1,4 @@
+// frontend/src/components/ui/ActionMenu.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -81,13 +82,14 @@ export default function ActionMenu({ label = "⋯", items, disabled = false }: P
               style={{
                 width: "100%",
                 textAlign: "left",
-                border: "none",
-                background: "transparent",
+                border: item.danger ? "1px solid #dc2626" : "none",
+                background: item.danger ? "#dc2626" : "transparent",
                 padding: "8px 10px",
                 borderRadius: 8,
                 cursor: item.disabled ? "not-allowed" : "pointer",
                 opacity: item.disabled ? 0.5 : 1,
-                color: item.danger ? "#b91c1c" : "#0f172a",
+                color: item.danger ? "#ffffff" : "#0f172a",
+                fontWeight: item.danger ? 800 : undefined,
               }}
             >
               {item.label}

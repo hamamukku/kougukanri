@@ -1,3 +1,4 @@
+// frontend/app/(app)/admin/warehouses/page.tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -104,6 +105,35 @@ export default function AdminWarehousesPage() {
     }
   };
 
+  // ラベル大きく + 中央寄せ（入力欄の中央に合わせる）
+  const labelStyle: React.CSSProperties = {
+    fontSize: 16,
+    fontWeight: 700,
+    marginBottom: 6,
+    textAlign: "center",
+    lineHeight: 1.2,
+  };
+
+  // 入力欄も他ページと揃える（高さ・文字サイズ）
+  const inputStyle: React.CSSProperties = {
+    fontSize: 16,
+    padding: "12px 12px",
+  };
+
+  // ✅ ボタンは「大きいけど横に伸びない」
+  const buttonStyle: React.CSSProperties = {
+    width: "auto",
+    minWidth: 140,
+    height: 52,
+    fontSize: 18,
+    fontWeight: 800,
+    padding: "0 22px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+  };
+
   if (loading) return <main>loading...</main>;
   if (err)
     return (
@@ -121,23 +151,30 @@ export default function AdminWarehousesPage() {
         style={{
           marginTop: 12,
           display: "grid",
-          gap: 8,
+          gap: 12,
           alignItems: "end",
           marginBottom: 12,
           padding: 12,
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
         }}
       >
         <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫名</div>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="倉庫名" />
+          <div style={labelStyle}>倉庫名</div>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="倉庫名" style={inputStyle} />
         </div>
+
         <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>倉庫番号 (任意)</div>
-          <Input value={warehouseNo} onChange={(e) => setWarehouseNo(e.target.value)} placeholder="例: WH-001" />
+          <div style={labelStyle}>倉庫番号（任意）</div>
+          <Input
+            value={warehouseNo}
+            onChange={(e) => setWarehouseNo(e.target.value)}
+            placeholder="例: WH-001"
+            style={inputStyle}
+          />
         </div>
-        <div>
-          <Button type="button" onClick={onAdd} disabled={submitting}>
+
+        <div style={{ display: "flex", justifyContent: "flex-start" }}>
+          <Button type="button" onClick={onAdd} disabled={submitting} style={buttonStyle}>
             {submitting ? "登録中..." : "登録"}
           </Button>
         </div>
@@ -155,7 +192,9 @@ export default function AdminWarehousesPage() {
           {warehouses.map((warehouse) => (
             <tr key={warehouse.id}>
               <td style={{ padding: "8px 0 8px 12px" }}>{warehouse.name}</td>
-              <td style={{ padding: "8px 0" }}>{warehouse.warehouseNo && warehouse.warehouseNo.trim() ? warehouse.warehouseNo : "未設定"}</td>
+              <td style={{ padding: "8px 0" }}>
+                {warehouse.warehouseNo && warehouse.warehouseNo.trim() ? warehouse.warehouseNo : "未設定"}
+              </td>
               <td style={{ padding: "8px 0" }}>
                 <ActionMenu
                   disabled={deletingId !== null}

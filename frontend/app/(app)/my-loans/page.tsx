@@ -1,3 +1,4 @@
+// frontend/app/(app)/my-loans/page.tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -125,86 +126,101 @@ export default function MyLoansPage() {
 
   return (
     <main>
-      <h1>貸出一覧</h1>
-
       {groups.length === 0 ? (
-        <p>表示する貸出情報がありません。</p>
+        <section
+          style={{
+            minHeight: "60vh",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            textAlign: "center",
+          }}
+        >
+          <h1 style={{ fontSize: 34, margin: 0 }}>貸出一覧</h1>
+          <p style={{ fontSize: 20, margin: 0 }}>表示する貸出情報がありません。</p>
+        </section>
       ) : (
-        groups.map((group) => (
-          <section key={group.boxId} style={{ marginTop: 16 }} className="card-surface">
-            <div style={{ padding: "12px 12px 0" }}>
-              <h2 style={{ marginBottom: 4 }}>{group.boxDisplayName}</h2>
-            </div>
+        <>
+          <h1 style={{ fontSize: 28, margin: "0 0 12px" }}>貸出一覧</h1>
 
-            <div className="desktop-table">
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>工具名</Th>
-                    <Th>工具ID</Th>
-                    <Th>開始日</Th>
-                    <Th>返却期日</Th>
-                    <Th>状態</Th>
-                    <Th>返却申請</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.items.map((item) => {
-                    const requested = typeof item.returnRequestedAt === "string" && item.returnRequestedAt.length > 0;
-                    const busy = requesting.has(item.loanItemId);
-                    return (
-                      <tr key={item.loanItemId}>
-                        <Td>{item.toolName}</Td>
-                        <Td>{item.assetNo}</Td>
-                        <Td>{item.startDate}</Td>
-                        <Td>{item.dueDate}</Td>
-                        <Td>
-                          <StatusBadge status={item.status} />
-                        </Td>
-                        <Td>
-                          {requested ? (
-                            <span>申請済み ({formatDateJa(item.returnRequestedAt ?? "")})</span>
-                          ) : (
-                            <Button type="button" disabled={busy} onClick={() => onRequestReturn(item.loanItemId)}>
-                              {busy ? "申請中..." : "返却申請"}
-                            </Button>
-                          )}
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </Table>
-            </div>
+          {groups.map((group) => (
+            <section key={group.boxId} style={{ marginTop: 16 }} className="card-surface">
+              <div style={{ padding: "12px 12px 0" }}>
+                <h2 style={{ marginBottom: 4 }}>{group.boxDisplayName}</h2>
+              </div>
 
-            <div className="mobile-cards" style={{ padding: 12 }}>
-              {group.items.map((item) => {
-                const requested = typeof item.returnRequestedAt === "string" && item.returnRequestedAt.length > 0;
-                const busy = requesting.has(item.loanItemId);
-                return (
-                  <article key={item.loanItemId} className="card-surface" style={{ padding: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <strong>{item.toolName}</strong>
-                      <StatusBadge status={item.status} />
-                    </div>
-                    <div style={{ marginTop: 8, fontSize: 13 }}>工具ID: {item.assetNo}</div>
-                    <div style={{ marginTop: 4, fontSize: 13 }}>開始日: {item.startDate}</div>
-                    <div style={{ marginTop: 4, fontSize: 13 }}>返却期日: {item.dueDate}</div>
-                    <div style={{ marginTop: 8 }}>
-                      {requested ? (
-                        <span>申請済み ({formatDateJa(item.returnRequestedAt ?? "")})</span>
-                      ) : (
-                        <Button type="button" disabled={busy} onClick={() => onRequestReturn(item.loanItemId)}>
-                          {busy ? "申請中..." : "返却申請"}
-                        </Button>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        ))
+              <div className="desktop-table">
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>工具名</Th>
+                      <Th>工具ID</Th>
+                      <Th>開始日</Th>
+                      <Th>返却期日</Th>
+                      <Th>状態</Th>
+                      <Th>返却申請</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.items.map((item) => {
+                      const requested = typeof item.returnRequestedAt === "string" && item.returnRequestedAt.length > 0;
+                      const busy = requesting.has(item.loanItemId);
+                      return (
+                        <tr key={item.loanItemId}>
+                          <Td>{item.toolName}</Td>
+                          <Td>{item.assetNo}</Td>
+                          <Td>{item.startDate}</Td>
+                          <Td>{item.dueDate}</Td>
+                          <Td>
+                            <StatusBadge status={item.status} />
+                          </Td>
+                          <Td>
+                            {requested ? (
+                              <span>申請済み ({formatDateJa(item.returnRequestedAt ?? "")})</span>
+                            ) : (
+                              <Button type="button" disabled={busy} onClick={() => onRequestReturn(item.loanItemId)}>
+                                {busy ? "申請中..." : "返却申請"}
+                              </Button>
+                            )}
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </div>
+
+              <div className="mobile-cards" style={{ padding: 12 }}>
+                {group.items.map((item) => {
+                  const requested = typeof item.returnRequestedAt === "string" && item.returnRequestedAt.length > 0;
+                  const busy = requesting.has(item.loanItemId);
+                  return (
+                    <article key={item.loanItemId} className="card-surface" style={{ padding: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                        <strong>{item.toolName}</strong>
+                        <StatusBadge status={item.status} />
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 13 }}>工具ID: {item.assetNo}</div>
+                      <div style={{ marginTop: 4, fontSize: 13 }}>開始日: {item.startDate}</div>
+                      <div style={{ marginTop: 4, fontSize: 13 }}>返却期日: {item.dueDate}</div>
+                      <div style={{ marginTop: 8 }}>
+                        {requested ? (
+                          <span>申請済み ({formatDateJa(item.returnRequestedAt ?? "")})</span>
+                        ) : (
+                          <Button type="button" disabled={busy} onClick={() => onRequestReturn(item.loanItemId)}>
+                            {busy ? "申請中..." : "返却申請"}
+                          </Button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </>
       )}
     </main>
   );

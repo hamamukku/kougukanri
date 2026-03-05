@@ -1,3 +1,4 @@
+// frontend/app/(app)/loan-box/page.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -45,6 +46,121 @@ type LoanBoxResponse = {
   }>;
 };
 
+// yyyy/mm/dd を「年/月/日」に見せる（中身は type="date" のまま・カレンダー維持）
+function DateInputJa(props: { value: string; onChange: (value: string) => void; min?: string; max?: string }) {
+  const [focused, setFocused] = useState(false);
+  const showHint = !props.value && !focused;
+
+  return (
+    <div style={{ position: "relative", width: "100%" }}>
+      {showHint ? (
+        <span
+          style={{
+            position: "absolute",
+            left: 12,
+            top: "50%",
+            transform: "translateY(-50%)",
+            color: "#64748b",
+            pointerEvents: "none",
+            fontSize: 14,
+          }}
+        >
+          年/月/日
+        </span>
+      ) : null}
+
+      <Input
+        type="date"
+        min={props.min}
+        max={props.max}
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{ color: showHint ? "transparent" : undefined }}
+      />
+    </div>
+  );
+}
+
+function ConfirmModal(props: {
+  open: boolean;
+  title?: string;
+  message: string;
+  okText?: string;
+  cancelText?: string;
+  busy?: boolean;
+  onOk: () => void;
+  onCancel: () => void;
+}) {
+  if (!props.open) return null;
+
+  const modalBtnStyle: React.CSSProperties = {
+    minWidth: 140,
+    height: 52,
+    fontSize: 18,
+    fontWeight: 800,
+    padding: "0 20px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        zIndex: 9999,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !props.busy) props.onCancel();
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 560,
+          background: "#fff",
+          borderRadius: 14,
+          border: "1px solid #e2e8f0",
+          boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+          padding: 18,
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 10 }}>{props.title ?? "確認"}</div>
+
+        <div style={{ fontSize: 16, lineHeight: 1.7, color: "#0f172a" }}>{props.message}</div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 14,
+            marginTop: 18,
+          }}
+        >
+          <Button type="button" variant="ghost" onClick={props.onCancel} disabled={props.busy} style={modalBtnStyle}>
+            {props.cancelText ?? "キャンセル"}
+          </Button>
+          <Button type="button" onClick={props.onOk} disabled={props.busy} style={modalBtnStyle}>
+            {props.busy ? "送信中..." : props.okText ?? "OK"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LoanBoxPage() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -59,6 +175,8 @@ export default function LoanBoxPage() {
     return d.toISOString().slice(0, 10);
   });
   const [dueOverrides, setDueOverrides] = useState<DueOverrides>({});
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const router = useRouter();
   const { selectedToolIds, clearSelection } = useLoanBox();
@@ -144,6 +262,7 @@ export default function LoanBoxPage() {
   }, [dueOverrides, loanBoxTools, startDate, dueDate]);
 
   const hasUnavailable = useMemo(() => loanBoxTools.some((tool) => tool.status !== "AVAILABLE"), [loanBoxTools]);
+
   const checkoutDisabled =
     submitting ||
     selectedToolIdList.length === 0 ||
@@ -153,9 +272,8 @@ export default function LoanBoxPage() {
     invalidOverride ||
     hasUnavailable;
 
-  const onCheckout = async () => {
+  const doCheckout = async () => {
     if (checkoutDisabled) return;
-    if (!window.confirm("貸出を確定しますか？")) return;
 
     setSubmitting(true);
     setErr(null);
@@ -186,17 +304,41 @@ export default function LoanBoxPage() {
       if (message) setErr(message);
     } finally {
       setSubmitting(false);
+      setConfirmOpen(false);
     }
+  };
+
+  const onClickCheckout = () => {
+    if (checkoutDisabled) return;
+    setConfirmOpen(true);
   };
 
   if (loading) return <main>loading...</main>;
 
   return (
     <main>
+      <ConfirmModal
+        open={confirmOpen}
+        title="貸出の確定"
+        message="貸出を確定しますか？"
+        okText="確定する"
+        cancelText="戻る"
+        busy={submitting}
+        onOk={doCheckout}
+        onCancel={() => setConfirmOpen(false)}
+      />
+
       <h1>貸出ボックス</h1>
 
       <div className="card-surface" style={{ marginTop: 12, padding: 12 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "end" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+            alignItems: "end",
+          }}
+        >
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>開始日</div>
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -206,7 +348,7 @@ export default function LoanBoxPage() {
             <Input type="date" value={dueDate} min={startDate} onChange={(e) => setDueDate(e.target.value)} />
           </div>
           <div>
-            <Button type="button" disabled={checkoutDisabled} onClick={onCheckout}>
+            <Button type="button" disabled={checkoutDisabled} onClick={onClickCheckout}>
               {submitting ? "送信中..." : "確定"}
             </Button>
           </div>
@@ -256,15 +398,11 @@ export default function LoanBoxPage() {
                       <StatusBadge status={tool.status} />
                     </Td>
                     <Td>
-                      <Input
-                        type="date"
+                      <DateInputJa
                         min={startDate}
                         max={dueDate}
                         value={dueOverrides[tool.id] || ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setDueOverrides((prev) => ({ ...prev, [tool.id]: value }));
-                        }}
+                        onChange={(value) => setDueOverrides((prev) => ({ ...prev, [tool.id]: value }))}
                       />
                     </Td>
                   </tr>
@@ -286,15 +424,11 @@ export default function LoanBoxPage() {
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>期限上書き</div>
-                  <Input
-                    type="date"
+                  <DateInputJa
                     min={startDate}
                     max={dueDate}
                     value={dueOverrides[tool.id] || ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDueOverrides((prev) => ({ ...prev, [tool.id]: value }));
-                    }}
+                    onChange={(value) => setDueOverrides((prev) => ({ ...prev, [tool.id]: value }))}
                   />
                 </div>
               </article>

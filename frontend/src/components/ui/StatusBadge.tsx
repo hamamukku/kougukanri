@@ -1,3 +1,4 @@
+// frontend/src/components/ui/StatusBadge.tsx
 "use client";
 
 import { statusLabel } from "../../utils/format";
@@ -23,19 +24,28 @@ function resolveTone(status: string): Tone {
 
 export default function StatusBadge({ status }: { status: string }) {
   const tone = resolveTone(status);
+
   return (
     <span
       style={{
         display: "inline-flex",
         alignItems: "center",
-        padding: "2px 10px",
+        justifyContent: "center",
+
+        // ✅ 全ページ・全状態で「デカく」する
+        padding: "6px 14px",
+        minHeight: 32,
+
         borderRadius: 999,
         border: `1px solid ${tone.border}`,
         background: tone.bg,
         color: tone.color,
-        fontSize: 12,
-        fontWeight: 700,
-        lineHeight: 1.5,
+
+        // ✅ 文字も拡大
+        fontSize: 16,
+        fontWeight: 800,
+        lineHeight: 1.1,
+        letterSpacing: "0.02em",
       }}
     >
       {statusLabel(status)}

@@ -1,3 +1,4 @@
+// frontend/app/(app)/my-page/page.tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -116,6 +117,36 @@ export default function MyPage() {
     }
   };
 
+  // ✅ 見た目統一：中央寄せ・大型化
+  const labelStyle: React.CSSProperties = {
+    fontSize: 16,
+    fontWeight: 700,
+    marginBottom: 6,
+    textAlign: "center",
+    lineHeight: 1.2,
+  };
+
+  const selectStyle: React.CSSProperties = {
+    height: 48,
+    borderRadius: 8,
+    border: "1px solid #cbd5e1",
+    padding: "0 12px",
+    width: "100%",
+    fontSize: 16,
+    lineHeight: "48px",
+  };
+
+  const inputStyle: React.CSSProperties = {
+    fontSize: 16,
+    padding: "12px 12px",
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    width: "100%",
+    fontSize: 16,
+    padding: "12px 12px",
+  };
+
   if (loading) return <main style={{ padding: 16 }}>loading...</main>;
   if (!profile)
     return (
@@ -125,59 +156,76 @@ export default function MyPage() {
     );
 
   return (
-    <main style={{ padding: 16, maxWidth: 720 }}>
-      <h1>マイページ</h1>
+    <main
+      style={{
+        minHeight: "calc(100vh - 80px)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 720 }}>
+        <h1 style={{ fontSize: 30, margin: "0 0 18px", textAlign: "center" }}>マイページ</h1>
 
-      <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>部署</div>
-          <select
-            value={department}
-            onChange={(e) => setDepartment(e.target.value)}
-            style={{ height: 36, borderRadius: 6, border: "1px solid #cbd5e1", padding: "0 10px", width: "100%" }}
-          >
-            {departments.map((item) => (
-              <option key={item.id} value={item.name}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <div className="card-surface" style={{ padding: 16 }}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div>
+              <div style={labelStyle}>部署</div>
+              <select value={department} onChange={(e) => setDepartment(e.target.value)} style={selectStyle}>
+                {departments.map((item) => (
+                  <option key={item.id} value={item.name}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>ユーザー名</div>
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} />
-        </div>
+            <div>
+              <div style={labelStyle}>ユーザー名</div>
+              <Input value={username} onChange={(e) => setUsername(e.target.value)} style={inputStyle} />
+            </div>
 
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>メール</div>
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
-        </div>
+            <div>
+              <div style={labelStyle}>メール</div>
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" style={inputStyle} />
+            </div>
 
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>新しいパスワード</div>
-          <Input
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            type="password"
-            placeholder="変更する場合のみ入力"
-          />
-        </div>
+            <div>
+              <div style={labelStyle}>新しいパスワード</div>
+              <Input
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                type="password"
+                placeholder="変更する場合のみ入力"
+                style={inputStyle}
+              />
+            </div>
 
-        <div style={{ display: "grid", gap: 4 }}>
-          <div style={{ fontSize: 12 }}>ロール: {profile.role}</div>
-          <div style={{ fontSize: 12 }}>作成日時: {formatDateTime(profile.createdAt)}</div>
-        </div>
+            <div
+              style={{
+                display: "grid",
+                gap: 6,
+                justifyItems: "center",
+                textAlign: "center",
+                marginTop: 6,
+              }}
+            >
+              <div style={{ fontSize: 14 }}>ロール: {profile.role}</div>
+              <div style={{ fontSize: 14 }}>作成日時: {formatDateTime(profile.createdAt)}</div>
+            </div>
 
-        <div>
-          <Button type="button" onClick={onSave} disabled={saving}>
-            {saving ? "更新中..." : "更新する"}
-          </Button>
+            <div>
+              <Button type="button" onClick={onSave} disabled={saving} style={buttonStyle}>
+                {saving ? "更新中..." : "更新する"}
+              </Button>
+            </div>
+
+            {message ? <p style={{ color: "#166534", margin: 0, textAlign: "center" }}>{message}</p> : null}
+            {error ? <p style={{ color: "#b91c1c", margin: 0, textAlign: "center" }}>error: {error}</p> : null}
+          </div>
         </div>
       </div>
-
-      {message ? <p style={{ color: "#166534", marginTop: 12 }}>{message}</p> : null}
-      {error ? <p style={{ color: "#b91c1c", marginTop: 12 }}>error: {error}</p> : null}
     </main>
   );
 }

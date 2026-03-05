@@ -58,6 +58,19 @@ func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, e
 	return i, err
 }
 
+const getMaxToolAssetNoByPrefixQuery = `
+SELECT MAX(asset_no)
+FROM tools
+WHERE asset_no LIKE $1 || '-%'
+`
+
+func (q *Queries) GetMaxToolAssetNoByPrefix(ctx context.Context, prefix string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getMaxToolAssetNoByPrefixQuery, prefix)
+	var maxAssetNo sql.NullString
+	err := row.Scan(&maxAssetNo)
+	return maxAssetNo, err
+}
+
 const getToolByIDQuery = `
 SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
 FROM tools

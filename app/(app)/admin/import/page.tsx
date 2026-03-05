@@ -32,6 +32,10 @@ const ERROR_MESSAGE_LABELS: Record<string, string> = {
   "tool name is required": "工具名は必須です",
   "warehouse number conflicts with existing data": "既存の倉庫番号と一致しません",
   "warehouse_no conflicts with existing value": "既存の倉庫番号と一致しません",
+  "warehouseNo is required": "倉庫番号は必須です",
+  "warehouseNo must not contain '-'": "倉庫番号に「-」は使用できません",
+  "warehouseNo conflicts in the same file": "倉庫番号の割当がファイル内で衝突しています",
+  "warehouseNo conflicts with existing warehouse": "倉庫番号が既存データと衝突しています",
   "internal server error": "サーバーエラーが発生しました",
 };
 
@@ -150,6 +154,11 @@ export default function AdminImportPage() {
         <div>
           <div style={{ fontSize: 12, marginBottom: 4 }}>シート名（任意）</div>
           <Input value={sheet} onChange={(e) => setSheet(e.target.value)} placeholder="未入力の場合は先頭シートを使用します" />
+        </div>
+
+        <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.6 }}>
+          <div>・倉庫番号は必須です</div>
+          <div>・工具IDは 倉庫番号-001 形式で自動採番されます</div>
         </div>
 
         <div>

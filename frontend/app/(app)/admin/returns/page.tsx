@@ -204,6 +204,7 @@ export default function AdminReturnsPage() {
                         <Th>選択</Th>
                         <Th>工具名</Th>
                         <Th>工具ID</Th>
+                        <Th>貸出者</Th>
                         <Th>開始日</Th>
                         <Th>返却期日</Th>
                         <Th>申請日時</Th>
@@ -227,6 +228,7 @@ export default function AdminReturnsPage() {
                             </Td>
                             <Td>{item.toolName}</Td>
                             <Td>{item.assetNo}</Td>
+                            <Td>{group.borrowerUsername}</Td>
                             <Td>{item.startDate}</Td>
                             <Td>{item.dueDate}</Td>
                             <Td>{formatDateJa(item.returnRequestedAt)}</Td>

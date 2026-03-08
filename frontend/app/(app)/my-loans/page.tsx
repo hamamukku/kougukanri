@@ -29,11 +29,20 @@ type GroupedLoans = {
   items: MyLoanItem[];
 };
 
+function isReturnRequested(item: MyLoanItem) {
+  return typeof item.returnRequestedAt === "string" && item.returnRequestedAt.length > 0;
+}
+
+function getPendingReturnItems(group: GroupedLoans) {
+  return group.items.filter((item) => !isReturnRequested(item));
+}
+
 export default function MyLoansPage() {
   const [groups, setGroups] = useState<GroupedLoans[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [requesting, setRequesting] = useState<Set<string>>(new Set());
+  const [bulkRequesting, setBulkRequesting] = useState<Set<string>>(new Set());
   const router = useRouter();
 
   const handleApiError = useCallback(
@@ -116,6 +125,49 @@ export default function MyLoansPage() {
     }
   };
 
+  const onRequestReturnBulk = async (group: GroupedLoans) => {
+    const pendingItems = getPendingReturnItems(group);
+    if (pendingItems.length === 0 || bulkRequesting.has(group.boxId)) return;
+
+    const targetIds = pendingItems.map((item) => item.loanItemId);
+    setBulkRequesting((prev) => new Set(prev).add(group.boxId));
+    setRequesting((prev) => {
+      const next = new Set(prev);
+      targetIds.forEach((id) => next.add(id));
+      return next;
+    });
+
+    let requestedAny = false;
+    try {
+      for (const item of pendingItems) {
+        await apiFetchJson<{ ok: boolean }>(`/api/my/loans/${item.loanItemId}/return-request`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        requestedAny = true;
+      }
+      await loadData();
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+      if (requestedAny) {
+        await loadData();
+      }
+    } finally {
+      setBulkRequesting((prev) => {
+        const next = new Set(prev);
+        next.delete(group.boxId);
+        return next;
+      });
+      setRequesting((prev) => {
+        const next = new Set(prev);
+        targetIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+  };
+
   if (loading) return <main>loading...</main>;
   if (err)
     return (
@@ -145,10 +197,18 @@ export default function MyLoansPage() {
         <>
           <h1 style={{ fontSize: 28, margin: "0 0 12px" }}>貸出一覧</h1>
 
-          {groups.map((group) => (
+          {groups.map((group) => {
+            const pendingItems = getPendingReturnItems(group);
+            const bulkBusy = bulkRequesting.has(group.boxId);
+            return (
             <section key={group.boxId} style={{ marginTop: 16 }} className="card-surface">
-              <div style={{ padding: "12px 12px 0" }}>
-                <h2 style={{ marginBottom: 4 }}>{group.boxDisplayName}</h2>
+              <div style={{ padding: "12px 12px 0", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <h2 style={{ margin: 0 }}>{group.boxDisplayName}</h2>
+                {pendingItems.length > 0 ? (
+                  <Button type="button" disabled={bulkBusy} onClick={() => onRequestReturnBulk(group)}>
+                    {bulkBusy ? "一括返却申請中..." : "一括返却"}
+                  </Button>
+                ) : null}
               </div>
 
               <div className="desktop-table my-loans-table">
@@ -165,7 +225,7 @@ export default function MyLoansPage() {
                   </thead>
                   <tbody>
                     {group.items.map((item) => {
-                      const requested = typeof item.returnRequestedAt === "string" && item.returnRequestedAt.length > 0;
+                      const requested = isReturnRequested(item);
                       const busy = requesting.has(item.loanItemId);
                       return (
                         <tr key={item.loanItemId}>
@@ -198,7 +258,7 @@ export default function MyLoansPage() {
 
               <div className="mobile-cards" style={{ padding: 12 }}>
                 {group.items.map((item) => {
-                  const requested = typeof item.returnRequestedAt === "string" && item.returnRequestedAt.length > 0;
+                  const requested = isReturnRequested(item);
                   const busy = requesting.has(item.loanItemId);
                   return (
                     <article key={item.loanItemId} className="card-surface" style={{ padding: 10 }}>
@@ -223,7 +283,7 @@ export default function MyLoansPage() {
                 })}
               </div>
             </section>
-          ))}
+          )})}
         </>
       )}
 

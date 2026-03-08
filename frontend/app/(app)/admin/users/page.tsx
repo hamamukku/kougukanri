@@ -299,10 +299,10 @@ export default function AdminUsersPage() {
         return null;
       }
 
-      if (isHttpError(error) && error.status === 403) {
-        router.push("/tools");
-        return null;
-      }
+        if (isHttpError(error) && error.status === 403) {
+          router.push("/tools");
+          return null;
+        }
 
       if (isHttpError(error)) {
         const body = error.body;
@@ -314,13 +314,31 @@ export default function AdminUsersPage() {
           if (envelope.error?.code === "USER_CODE_DUPLICATE") {
             return "このユーザーIDは既に使われています";
           }
+          if (envelope.error?.code === "USERNAME_DUPLICATE") {
+            return "このユーザー名は既に使われています";
+          }
+          if (envelope.error?.code === "EMAIL_DUPLICATE") {
+            return "このメールアドレスは既に使われています";
+          }
           if (envelope.error?.message === "userCode already exists" || envelope.message === "userCode already exists") {
             return "このユーザーIDは既に使われています";
+          }
+          if (envelope.error?.message === "username already exists" || envelope.message === "username already exists") {
+            return "このユーザー名は既に使われています";
+          }
+          if (envelope.error?.message === "email already exists" || envelope.message === "email already exists") {
+            return "このメールアドレスは既に使われています";
           }
         }
 
         if (error.message === "userCode already exists") {
           return "このユーザーIDは既に使われています";
+        }
+        if (error.message === "username already exists") {
+          return "このユーザー名は既に使われています";
+        }
+        if (error.message === "email already exists") {
+          return "このメールアドレスは既に使われています";
         }
       }
 

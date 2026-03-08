@@ -42,7 +42,6 @@ require_value "$admin_token" "admin token"
 
 run_id="$(date +%Y%m%d%H%M%S)"
 warehouse_name="smoke-warehouse-$run_id"
-asset_no="SMOKE-$run_id"
 tool_name="Smoke Tool $run_id"
 smoke_username="smoke_user_$run_id"
 smoke_email="smoke_$run_id@example.com"
@@ -57,9 +56,11 @@ require_value "$warehouse_id" "warehouse id"
 tool_resp="$(curl -fsS -X POST "$BASE_URL/api/admin/tools" \
   -H "Authorization: Bearer $admin_token" \
   -H "Content-Type: application/json" \
-  -d "{\"assetNo\":\"$asset_no\",\"name\":\"$tool_name\",\"warehouseId\":\"$warehouse_id\",\"baseStatus\":\"AVAILABLE\"}")"
+  -d "{\"name\":\"$tool_name\",\"warehouseId\":\"$warehouse_id\",\"baseStatus\":\"AVAILABLE\"}")"
 tool_id="$(json_string "$tool_resp" "id")"
+asset_no="$(json_string "$tool_resp" "assetNo")"
 require_value "$tool_id" "tool id"
+require_value "$asset_no" "tool assetNo"
 
 curl -fsS -X POST "$BASE_URL/api/admin/users" \
   -H "Authorization: Bearer $admin_token" \

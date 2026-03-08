@@ -59,17 +59,30 @@ func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, e
 	return i, err
 }
 
-const getMaxToolAssetNoByPrefixQuery = `
-SELECT MAX(asset_no)
+const listActiveToolAssetNosByWarehouseQuery = `
+SELECT asset_no
 FROM tools
-WHERE asset_no LIKE $1 || '-%'
+WHERE warehouse_id = $1
+  AND retired_at IS NULL
+ORDER BY asset_no ASC
 `
 
-func (q *Queries) GetMaxToolAssetNoByPrefix(ctx context.Context, prefix string) (sql.NullString, error) {
-	row := q.db.QueryRowContext(ctx, getMaxToolAssetNoByPrefixQuery, prefix)
-	var maxAssetNo sql.NullString
-	err := row.Scan(&maxAssetNo)
-	return maxAssetNo, err
+func (q *Queries) ListActiveToolAssetNosByWarehouse(ctx context.Context, warehouseID uuid.UUID) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveToolAssetNosByWarehouseQuery, warehouseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]string, 0)
+	for rows.Next() {
+		var assetNo string
+		if err := rows.Scan(&assetNo); err != nil {
+			return nil, err
+		}
+		items = append(items, assetNo)
+	}
+	return items, rows.Err()
 }
 
 const getToolByIDQuery = `
@@ -473,7 +486,12 @@ WHERE
     )
 ORDER BY
     CASE
-        WHEN BOOL_AND(asset_no ~ '^[0-9]+$') OVER () THEN asset_no::numeric
+        WHEN asset_no ~ '^.+-[0-9]+$' THEN regexp_replace(asset_no, '-[0-9]+$', '')
+        ELSE asset_no
+    END ASC,
+    CASE
+        WHEN asset_no ~ '^[0-9]+$' THEN asset_no::numeric
+        WHEN asset_no ~ '^.+-[0-9]+$' THEN substring(asset_no FROM '([0-9]+)$')::numeric
         ELSE NULL
     END NULLS LAST,
     asset_no ASC

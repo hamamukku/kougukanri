@@ -66,6 +66,20 @@ func (q *Queries) GetWarehouseByID(ctx context.Context, id uuid.UUID) (Warehouse
 	return i, err
 }
 
+const getWarehouseByIDForUpdateQuery = `
+SELECT id, name, warehouse_no, created_at, updated_at
+FROM warehouses
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetWarehouseByIDForUpdate(ctx context.Context, id uuid.UUID) (Warehouse, error) {
+	row := q.db.QueryRowContext(ctx, getWarehouseByIDForUpdateQuery, id)
+	var i Warehouse
+	err := row.Scan(&i.ID, &i.Name, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}
+
 const countToolsByWarehouseQuery = `
 SELECT COUNT(*)::bigint AS count
 FROM tools

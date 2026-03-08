@@ -23,8 +23,6 @@ $runId = Get-Date -Format "yyyyMMddHHmmss"
 $today = Get-Date -Format "yyyy-MM-dd"
 
 $warehouseName = "e2e-wh-$runId"
-$toolAAsset = "E2E-$runId-A"
-$toolBAsset = "E2E-$runId-B"
 $toolAName = "E2E Tool A $runId"
 $toolBName = "E2E Tool B $runId"
 $userName = "e2e_user_$runId"
@@ -41,13 +39,15 @@ $warehouse = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/admin/warehouses"
 
 Step "create tool A"
 $toolA = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/admin/tools" -Headers $adminHeaders -ContentType "application/json" -Body (
-  @{ assetNo = $toolAAsset; name = $toolAName; warehouseId = $warehouse.id; baseStatus = "AVAILABLE" } | ConvertTo-Json
+  @{ name = $toolAName; warehouseId = $warehouse.id; baseStatus = "AVAILABLE" } | ConvertTo-Json
 )
+$toolAAsset = $toolA.assetNo
 
 Step "create tool B"
 $toolB = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/admin/tools" -Headers $adminHeaders -ContentType "application/json" -Body (
-  @{ assetNo = $toolBAsset; name = $toolBName; warehouseId = $warehouse.id; baseStatus = "AVAILABLE" } | ConvertTo-Json
+  @{ name = $toolBName; warehouseId = $warehouse.id; baseStatus = "AVAILABLE" } | ConvertTo-Json
 )
+$toolBAsset = $toolB.assetNo
 
 Step "create user"
 $user = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/admin/users" -Headers $adminHeaders -ContentType "application/json" -Body (

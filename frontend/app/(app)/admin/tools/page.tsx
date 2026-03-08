@@ -45,7 +45,6 @@ type PagedResponse<T> = {
 type BulkInputRow = {
   key: string;
   name: string;
-  assetNo: string;
   warehouseId: string;
   baseStatus: EditableStatus;
 };
@@ -98,7 +97,6 @@ function createBulkRow(defaultWarehouseId: string): BulkInputRow {
   return {
     key: `${Date.now()}-${Math.random()}`,
     name: "",
-    assetNo: "",
     warehouseId: defaultWarehouseId,
     baseStatus: "AVAILABLE",
   };
@@ -222,7 +220,6 @@ export default function AdminToolsPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const [mode, setMode] = useState<"single" | "bulk">("single");
-  const [assetNo, setAssetNo] = useState("");
   const [name, setName] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [status, setStatus] = useState<EditableStatus>("AVAILABLE");
@@ -311,7 +308,7 @@ export default function AdminToolsPage() {
   }, [bulkRows.length, warehouseId, warehouses]);
 
   const onAdd = async () => {
-    if (!assetNo.trim() || !name.trim() || !warehouseId) return;
+    if (!name.trim() || !warehouseId) return;
     if (submitting.has("add")) return;
 
     setSubmitting((prev) => new Set(prev).add("add"));
@@ -320,13 +317,11 @@ export default function AdminToolsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          assetNo: assetNo.trim(),
           name: name.trim(),
           warehouseId,
           baseStatus: status, // Backward-compatible API field name.
         }),
       });
-      setAssetNo("");
       setName("");
       setStatus("AVAILABLE");
       await loadData();
@@ -389,7 +384,6 @@ export default function AdminToolsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tools: bulkRows.map((row) => ({
-            assetNo: row.assetNo.trim(),
             name: row.name.trim(),
             warehouseId: row.warehouseId,
             baseStatus: row.baseStatus,
@@ -488,24 +482,19 @@ export default function AdminToolsPage() {
   const onSaveTool = async (tool: Tool) => {
     if (editingToolId !== tool.id || deletingId !== null || submitting.has(tool.id)) return;
 
-    const nextAssetNo = editingToolAssetNo.trim();
     const nextName = editingToolName.trim();
-    if (!nextAssetNo || !nextName || !editingToolWarehouseId) return;
+    if (!nextName || !editingToolWarehouseId) return;
 
     const nextStatus = toEditableStatus(editingToolStatus);
     const nextWarehouse = warehouses.find((item) => item.id === editingToolWarehouseId);
     const ok = await patchToolInline(
       tool,
       {
-        toolId: nextAssetNo,
-        assetNo: nextAssetNo,
         name: nextName,
         warehouseId: editingToolWarehouseId,
         baseStatus: nextStatus,
       },
       {
-        toolId: nextAssetNo,
-        assetNo: nextAssetNo,
         name: nextName,
         warehouseId: editingToolWarehouseId,
         warehouseName: nextWarehouse?.name ?? tool.warehouseName,
@@ -704,10 +693,6 @@ export default function AdminToolsPage() {
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="" />
             </div>
             <div>
-              <div style={addFormLabelStyle}>工具ID</div>
-              <Input value={assetNo} onChange={(e) => setAssetNo(e.target.value)} placeholder="" />
-            </div>
-            <div>
               <div style={addFormLabelStyle}>場所</div>
               <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={selectStyle}>
                 {warehouses.map((warehouse) => (
@@ -731,7 +716,7 @@ export default function AdminToolsPage() {
               <Button
                 type="button"
                 onClick={onAdd}
-                disabled={submitting.has("add") || !assetNo.trim() || !name.trim() || !warehouses.length}
+                disabled={submitting.has("add") || !name.trim() || !warehouses.length}
               >
                 追加
               </Button>
@@ -749,7 +734,6 @@ export default function AdminToolsPage() {
                   <tr>
                     <Th>#</Th>
                     <Th>工具名</Th>
-                    <Th>工具ID</Th>
                     <Th>場所</Th>
                     <Th>状態</Th>
                     <Th>操作</Th>
@@ -774,24 +758,6 @@ export default function AdminToolsPage() {
                         {getBulkRowError(bulkRowErrors, index + 1, "name") ? (
                           <div style={{ marginTop: 4, color: "var(--danger)", fontSize: 12 }}>
                             {getBulkRowError(bulkRowErrors, index + 1, "name")}
-                          </div>
-                        ) : null}
-                      </Td>
-                      <Td>
-                        <div style={bulkTableFieldWrapStyle}>
-                          <Input
-                            value={row.assetNo}
-                            onChange={(e) =>
-                              setBulkRows((prev) =>
-                                prev.map((item) => (item.key === row.key ? { ...item, assetNo: e.target.value } : item)),
-                              )
-                            }
-                            placeholder="工具ID"
-                          />
-                        </div>
-                        {getBulkRowError(bulkRowErrors, index + 1, "assetNo") ? (
-                          <div style={{ marginTop: 4, color: "var(--danger)", fontSize: 12 }}>
-                            {getBulkRowError(bulkRowErrors, index + 1, "assetNo")}
                           </div>
                         ) : null}
                       </Td>
@@ -897,7 +863,7 @@ export default function AdminToolsPage() {
                 const disableAction = isBusy || actionBusy;
                 const currentStatus = tool.status;
                 const isEditing = editingToolId === tool.id;
-                const isSaveDisabled = !editingToolAssetNo.trim() || !editingToolName.trim() || !editingToolWarehouseId;
+                const isSaveDisabled = !editingToolName.trim() || !editingToolWarehouseId;
                 return (
                   <tr key={tool.id}>
                     <Td>
@@ -914,7 +880,7 @@ export default function AdminToolsPage() {
                     </Td>
                     <Td>
                       {isEditing ? (
-                        <Input value={editingToolAssetNo} onChange={(e) => setEditingToolAssetNo(e.target.value)} disabled={disableAction} />
+                        <Input value={editingToolAssetNo} disabled />
                       ) : (
                         tool.toolId
                       )}
@@ -1002,7 +968,7 @@ export default function AdminToolsPage() {
             const disableAction = isBusy || actionBusy;
             const currentStatus = tool.status;
             const isEditing = editingToolId === tool.id;
-            const isSaveDisabled = !editingToolAssetNo.trim() || !editingToolName.trim() || !editingToolWarehouseId;
+            const isSaveDisabled = !editingToolName.trim() || !editingToolWarehouseId;
             return (
               <article key={tool.id} className="card-surface" style={{ padding: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
@@ -1041,7 +1007,7 @@ export default function AdminToolsPage() {
                 <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>工具ID</div>
                   {isEditing ? (
-                    <Input value={editingToolAssetNo} onChange={(e) => setEditingToolAssetNo(e.target.value)} disabled={disableAction} />
+                    <Input value={editingToolAssetNo} disabled />
                   ) : (
                     <div style={{ fontSize: 13 }}>{tool.toolId}</div>
                   )}

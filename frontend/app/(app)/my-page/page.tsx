@@ -22,6 +22,11 @@ type Department = {
   name: string;
 };
 
+const ROLE_LABEL_MAP: Record<Profile["role"], string> = {
+  admin: "管理者",
+  user: "一般ユーザー",
+};
+
 function formatDateTime(value: string | undefined): string {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -211,7 +216,7 @@ export default function MyPage() {
                 marginTop: 6,
               }}
             >
-              <div style={{ fontSize: 14 }}>種別: {profile.role}</div>
+              <div style={{ fontSize: 14 }}>種別: {ROLE_LABEL_MAP[profile.role] ?? profile.role}</div>
               <div style={{ fontSize: 14 }}>作成日時: {formatDateTime(profile.createdAt)}</div>
             </div>
 

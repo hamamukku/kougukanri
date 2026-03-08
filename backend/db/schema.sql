@@ -5,9 +5,9 @@ CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
     department TEXT NOT NULL,
-    user_code TEXT NOT NULL UNIQUE,
-    username TEXT NOT NULL UNIQUE,
-    email TEXT NOT NULL UNIQUE,
+    user_code TEXT NOT NULL,
+    username TEXT NOT NULL,
+    email TEXT NOT NULL,
     password_hash TEXT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -30,11 +30,9 @@ CREATE TABLE warehouses (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE SEQUENCE tool_asset_no_seq START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
-
 CREATE TABLE tools (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    asset_no TEXT NOT NULL DEFAULT ('T-' || LPAD(nextval('tool_asset_no_seq')::text, 6, '0')),
+    asset_no TEXT NOT NULL,
     tag_id TEXT NULL,
     name TEXT NOT NULL,
     warehouse_id UUID NOT NULL REFERENCES warehouses(id),
@@ -115,3 +113,6 @@ CREATE INDEX idx_loan_items_tool_period ON loan_items(tool_id, start_date, due_d
 CREATE UNIQUE INDEX idx_user_signup_requests_username_pending ON user_signup_requests(username) WHERE status = 'pending';
 CREATE UNIQUE INDEX idx_user_signup_requests_email_pending ON user_signup_requests(email) WHERE status = 'pending';
 CREATE INDEX idx_user_signup_requests_status_requested_at ON user_signup_requests(status, requested_at DESC);
+CREATE UNIQUE INDEX users_user_code_key ON users(user_code) WHERE is_active = TRUE;
+CREATE UNIQUE INDEX users_username_key ON users(username) WHERE is_active = TRUE;
+CREATE UNIQUE INDEX users_email_key ON users(email) WHERE is_active = TRUE;

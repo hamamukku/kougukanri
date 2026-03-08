@@ -1,4 +1,3 @@
-// frontend/app/(app)/side-nav.tsx
 "use client";
 
 import Link from "next/link";
@@ -26,6 +25,7 @@ export default function SideNav({ role }: Props) {
     { href: "/admin/users", label: "ユーザー・部署管理" },
     { href: "/admin/warehouses", label: "場所管理" },
     { href: "/admin/import", label: "Excel取込" },
+    { href: "/my-page", label: "マイページ" },
   ];
 
   const menu = role === "admin" ? adminMenu : userMenu;
@@ -44,18 +44,13 @@ export default function SideNav({ role }: Props) {
               alignItems: "center",
               justifyContent: "space-between",
               gap: 12,
-
-              // ✅ ボタン自体を拡大
               padding: "14px 16px",
               minHeight: 56,
-
               borderRadius: 12,
               border: `1px solid ${active ? "#7dd3fc" : "#d8e2ec"}`,
               background: active ? "#e0f2fe" : "#ffffff",
               color: "#0f172a",
               textDecoration: "none",
-
-              // ✅ 文字を拡大
               fontSize: 18,
               fontWeight: active ? 800 : 600,
               lineHeight: 1.2,

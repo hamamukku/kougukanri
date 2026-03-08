@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -848,9 +849,6 @@ func normalizeCreateToolParams(assetNo, name string, warehouseID uuid.UUID, base
 	assetNo = strings.TrimSpace(assetNo)
 	name = strings.TrimSpace(name)
 	baseStatus = strings.ToUpper(strings.TrimSpace(baseStatus))
-	if assetNo == "" {
-		return db.CreateToolParams{}, apierr.InvalidRequest("assetNo is required", nil)
-	}
 	if name == "" {
 		return db.CreateToolParams{}, apierr.InvalidRequest("name is required", nil)
 	}
@@ -879,6 +877,43 @@ func normalizeCreateToolParams(assetNo, name string, warehouseID uuid.UUID, base
 	}, nil
 }
 
+func extractToolAssetSequence(assetNo string) (int, bool) {
+	idx := strings.LastIndex(strings.TrimSpace(assetNo), "-")
+	if idx < 0 || idx == len(assetNo)-1 {
+		return 0, false
+	}
+
+	seq, err := strconv.Atoi(assetNo[idx+1:])
+	if err != nil || seq <= 0 {
+		return 0, false
+	}
+	return seq, true
+}
+
+func (s *Service) nextToolAssetNo(ctx context.Context, qtx *db.Queries, warehouseID uuid.UUID) (string, error) {
+	warehouse, err := qtx.GetWarehouseByIDForUpdate(ctx, warehouseID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return "", apierr.InvalidRequest("warehouseId is invalid", nil)
+		}
+		return "", err
+	}
+
+	assetNos, err := qtx.ListActiveToolAssetNosByWarehouse(ctx, warehouseID)
+	if err != nil {
+		return "", err
+	}
+
+	maxSeq := 0
+	for _, assetNo := range assetNos {
+		if seq, ok := extractToolAssetSequence(assetNo); ok && seq > maxSeq {
+			maxSeq = seq
+		}
+	}
+
+	return fmt.Sprintf("%s-%03d", strings.TrimSpace(warehouse.Name), maxSeq+1), nil
+}
+
 func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, name string, warehouseID uuid.UUID, baseStatus string) (db.Tool, error) {
 	createParams, err := normalizeCreateToolParams(assetNo, name, warehouseID, baseStatus, nil)
 	if err != nil {
@@ -891,6 +926,11 @@ func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, na
 	}
 	defer tx.Rollback()
 	qtx := s.queries.WithTx(tx)
+
+	createParams.AssetNo, err = s.nextToolAssetNo(ctx, qtx, createParams.WarehouseID)
+	if err != nil {
+		return db.Tool{}, err
+	}
 
 	tool, err := qtx.CreateTool(ctx, createParams)
 	if err != nil {
@@ -978,7 +1018,6 @@ func (s *Service) CreateToolsBulk(ctx context.Context, actorID uuid.UUID, items 
 
 	rowErrors := make([]BulkToolRowError, 0)
 	normalized := make([]db.CreateToolParams, len(items))
-	assetSeenRow := make(map[string]int)
 	tagSeenRow := make(map[string]int)
 
 	for i, item := range items {
@@ -1002,12 +1041,6 @@ func (s *Service) CreateToolsBulk(ctx context.Context, actorID uuid.UUID, items 
 				continue
 			}
 			return CreateToolBulkResult{}, err
-		}
-
-		if firstRow, ok := assetSeenRow[params.AssetNo]; ok {
-			rowErrors = append(rowErrors, bulkRowError(row, "assetNo", fmt.Sprintf("assetNo duplicates row %d", firstRow)))
-		} else {
-			assetSeenRow[params.AssetNo] = row
 		}
 
 		if params.TagID.Valid {
@@ -1052,6 +1085,10 @@ func (s *Service) CreateToolsBulk(ctx context.Context, actorID uuid.UUID, items 
 	created := make([]db.Tool, 0, len(normalized))
 	createdIDs := make([]uuid.UUID, 0, len(normalized))
 	for i, params := range normalized {
+		params.AssetNo, err = s.nextToolAssetNo(ctx, qtx, params.WarehouseID)
+		if err != nil {
+			return CreateToolBulkResult{}, err
+		}
 		tool, err := qtx.CreateTool(ctx, params)
 		if err != nil {
 			if mapped := mapPQError(err); mapped != nil {
@@ -1318,9 +1355,8 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 		if trimmed == "" {
 			return db.Tool{}, apierr.InvalidRequest("assetNo cannot be empty", nil)
 		}
-		assetNo = trimmed
 		if trimmed != current.AssetNo {
-			changedFields["assetNo"] = trimmed
+			return db.Tool{}, apierr.InvalidRequest("assetNo is managed automatically", nil)
 		}
 	}
 	if in.Name != nil {
@@ -1371,6 +1407,15 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 					changedFields["tagId"] = trimmed
 				}
 			}
+		}
+	}
+	if warehouseID != current.WarehouseID {
+		assetNo, err = s.nextToolAssetNo(ctx, qtx, warehouseID)
+		if err != nil {
+			return db.Tool{}, err
+		}
+		if assetNo != current.AssetNo {
+			changedFields["assetNo"] = assetNo
 		}
 	}
 

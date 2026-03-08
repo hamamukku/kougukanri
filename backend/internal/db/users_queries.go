@@ -67,7 +67,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (UserSaf
 const getUserByLoginIDQuery = `
 SELECT id, role, department, user_code, username, email, password_hash, is_active
 FROM users
-WHERE email = $1 OR username = $1
+WHERE is_active = TRUE
+  AND (email = $1 OR username = $1)
 LIMIT 1
 `
 

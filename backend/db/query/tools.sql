@@ -228,7 +228,12 @@ WHERE
     )
 ORDER BY
     CASE
-        WHEN BOOL_AND(asset_no ~ '^[0-9]+$') OVER () THEN asset_no::numeric
+        WHEN asset_no ~ '^.+-[0-9]+$' THEN regexp_replace(asset_no, '-[0-9]+$', '')
+        ELSE asset_no
+    END ASC,
+    CASE
+        WHEN asset_no ~ '^[0-9]+$' THEN asset_no::numeric
+        WHEN asset_no ~ '^.+-[0-9]+$' THEN substring(asset_no FROM '([0-9]+)$')::numeric
         ELSE NULL
     END NULLS LAST,
     asset_no ASC

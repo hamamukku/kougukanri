@@ -26,6 +26,7 @@ type User = {
   email: string;
   password: string;
   role: Role;
+  isActive: boolean;
 };
 
 type LoanBox = {
@@ -71,9 +72,9 @@ let warehouses: Warehouse[] = [
 ];
 
 let tools: Tool[] = [
-  { id: "t1", assetNo: "A-0001", name: "Drill", warehouseId: "w1", baseStatus: "AVAILABLE" },
-  { id: "t2", assetNo: "A-0002", name: "Wrench", warehouseId: "w1", baseStatus: "AVAILABLE" },
-  { id: "t3", assetNo: "A-0003", name: "Saw", warehouseId: "w2", baseStatus: "REPAIR" },
+  { id: "t1", assetNo: "Main Warehouse-001", name: "Drill", warehouseId: "w1", baseStatus: "AVAILABLE" },
+  { id: "t2", assetNo: "Main Warehouse-002", name: "Wrench", warehouseId: "w1", baseStatus: "AVAILABLE" },
+  { id: "t3", assetNo: "Sub Warehouse-001", name: "Saw", warehouseId: "w2", baseStatus: "REPAIR" },
 ];
 
 let users: User[] = [
@@ -85,6 +86,7 @@ let users: User[] = [
     email: "admin@example.com",
     password: "admin123",
     role: "admin",
+    isActive: true,
   },
   {
     id: "u2",
@@ -94,6 +96,7 @@ let users: User[] = [
     email: "user1@example.com",
     password: "user12345",
     role: "user",
+    isActive: true,
   },
 ];
 
@@ -138,9 +141,13 @@ function readBody(body: unknown): Record<string, unknown> {
   return body as Record<string, unknown>;
 }
 
+function isActiveUser(user: User) {
+  return user.isActive;
+}
+
 function findUserByLoginID(loginID: string) {
   const id = loginID.trim().toLowerCase();
-  return users.find((user) => user.username.toLowerCase() === id || user.email.toLowerCase() === id) ?? null;
+  return users.find((user) => isActiveUser(user) && (user.username.toLowerCase() === id || user.email.toLowerCase() === id)) ?? null;
 }
 
 function authenticate(request: Request, requiredRole?: Role): { user: User } | { error: Response } {
@@ -158,6 +165,9 @@ function authenticate(request: Request, requiredRole?: Role): { user: User } | {
   const user = users.find((item) => item.id === userID);
   if (!user) {
     return { error: errorResponse(401, "UNAUTHORIZED", "user not found") };
+  }
+  if (!isActiveUser(user)) {
+    return { error: errorResponse(401, "UNAUTHORIZED", "user is inactive") };
   }
 
   if (requiredRole && user.role !== requiredRole) {
@@ -256,6 +266,28 @@ function parseOverrides(raw: unknown): Record<string, string> {
     next[toolID] = dueDate;
   }
   return next;
+}
+
+function extractToolAssetSequence(assetNo: string) {
+  const trimmed = assetNo.trim();
+  const index = trimmed.lastIndexOf("-");
+  if (index < 0 || index === trimmed.length - 1) return null;
+  const seq = Number(trimmed.slice(index + 1));
+  if (!Number.isInteger(seq) || seq <= 0) return null;
+  return seq;
+}
+
+function nextToolAssetNo(warehouseID: string, sourceTools: Tool[], excludeToolID?: string) {
+  const warehouse = warehouses.find((item) => item.id === warehouseID);
+  if (!warehouse) return "";
+
+  const maxSeq = sourceTools.reduce((max, tool) => {
+    if (tool.warehouseId !== warehouseID || tool.id === excludeToolID) return max;
+    const seq = extractToolAssetSequence(tool.assetNo);
+    return seq !== null && seq > max ? seq : max;
+  }, 0);
+
+  return `${warehouse.name}-${String(maxSeq + 1).padStart(3, "0")}`;
 }
 
 export const handlers = [
@@ -565,27 +597,22 @@ export const handlers = [
 
     const obj = readBody(body);
     const name = typeof obj.name === "string" ? obj.name.trim() : "";
-    const assetNo = typeof obj.assetNo === "string" ? obj.assetNo.trim() : "";
     const warehouseID = typeof obj.warehouseId === "string" ? obj.warehouseId.trim() : "";
     const baseStatusRaw = typeof obj.baseStatus === "string" ? obj.baseStatus.trim().toUpperCase() : "";
     const baseStatus: BaseStatus =
       baseStatusRaw === "BROKEN" || baseStatusRaw === "REPAIR" ? (baseStatusRaw as BaseStatus) : "AVAILABLE";
 
-    if (!name || !assetNo || !warehouseID) {
-      return errorResponse(400, "INVALID_REQUEST", "assetNo, name, warehouseId are required");
+    if (!name || !warehouseID) {
+      return errorResponse(400, "INVALID_REQUEST", "name, warehouseId are required");
     }
 
     if (!warehouses.some((warehouse) => warehouse.id === warehouseID)) {
       return errorResponse(400, "INVALID_REQUEST", "warehouseId is invalid");
     }
 
-    if (tools.some((tool) => tool.assetNo.toLowerCase() === assetNo.toLowerCase())) {
-      return errorResponse(409, "TOOL_ASSET_NO_DUPLICATE", "assetNo already exists");
-    }
-
     const tool: Tool = {
       id: `t-${nextToolNo++}`,
-      assetNo,
+      assetNo: nextToolAssetNo(warehouseID, tools),
       name,
       warehouseId: warehouseID,
       baseStatus,
@@ -626,42 +653,26 @@ export const handlers = [
 
     const rowErrors: Array<{ row: number; field: string; message: string }> = [];
     const nextTools: Tool[] = [];
-    const seenAssetNos = new Set<string>();
 
     for (const [index, rawItem] of rawTools.entries()) {
       const item = readBody(rawItem);
       const row = index + 1;
-      const assetNo = typeof item.assetNo === "string" ? item.assetNo.trim() : "";
       const name = typeof item.name === "string" ? item.name.trim() : "";
       const warehouseID = typeof item.warehouseId === "string" ? item.warehouseId.trim() : "";
       const baseStatusRaw = typeof item.baseStatus === "string" ? item.baseStatus.trim().toUpperCase() : "";
       const baseStatus: BaseStatus =
         baseStatusRaw === "BROKEN" || baseStatusRaw === "REPAIR" ? (baseStatusRaw as BaseStatus) : "AVAILABLE";
 
-      if (!assetNo) {
-        rowErrors.push({ row, field: "assetNo", message: "assetNo is required" });
-      }
       if (!name) {
         rowErrors.push({ row, field: "name", message: "name is required" });
       }
       if (!warehouseID || !warehouses.some((warehouse) => warehouse.id === warehouseID)) {
         rowErrors.push({ row, field: "warehouseId", message: "warehouseId is invalid" });
       }
-      if (assetNo) {
-        const normalizedAssetNo = assetNo.toLowerCase();
-        if (seenAssetNos.has(normalizedAssetNo)) {
-          rowErrors.push({ row, field: "assetNo", message: "assetNo duplicates another row" });
-        } else {
-          seenAssetNos.add(normalizedAssetNo);
-        }
-        if (tools.some((tool) => tool.assetNo.toLowerCase() === normalizedAssetNo)) {
-          rowErrors.push({ row, field: "assetNo", message: "assetNo already exists" });
-        }
-      }
 
       nextTools.push({
         id: `t-${nextToolNo + index}`,
-        assetNo,
+        assetNo: nextToolAssetNo(warehouseID, [...tools, ...nextTools]),
         name,
         warehouseId: warehouseID,
         baseStatus,
@@ -743,7 +754,6 @@ export const handlers = [
     const obj = readBody(body);
     const nextToolId = typeof obj.toolId === "string" ? obj.toolId.trim() : undefined;
     const rawAssetNo = typeof obj.assetNo === "string" ? obj.assetNo.trim() : undefined;
-    const nextAssetNo = rawAssetNo ?? nextToolId;
     const nextName = typeof obj.name === "string" ? obj.name.trim() : undefined;
     const nextWarehouseID = typeof obj.warehouseId === "string" ? obj.warehouseId.trim() : undefined;
     const nextBaseStatusRaw = typeof obj.baseStatus === "string" ? obj.baseStatus.trim().toUpperCase() : undefined;
@@ -751,8 +761,14 @@ export const handlers = [
     if (rawAssetNo !== undefined && nextToolId !== undefined && rawAssetNo !== nextToolId) {
       return errorResponse(400, "INVALID_REQUEST", "assetNo and toolId do not match");
     }
-    if (nextAssetNo !== undefined && !nextAssetNo) {
+    if ((rawAssetNo !== undefined && !rawAssetNo) || (nextToolId !== undefined && !nextToolId)) {
       return errorResponse(400, "INVALID_REQUEST", "assetNo is invalid");
+    }
+    if (
+      (rawAssetNo !== undefined && rawAssetNo !== tools[index].assetNo) ||
+      (nextToolId !== undefined && nextToolId !== tools[index].assetNo)
+    ) {
+      return errorResponse(400, "INVALID_REQUEST", "assetNo is managed automatically");
     }
     if (nextName !== undefined && !nextName) {
       return errorResponse(400, "INVALID_REQUEST", "name is invalid");
@@ -771,17 +787,14 @@ export const handlers = [
       return errorResponse(400, "INVALID_REQUEST", "baseStatus is invalid");
     }
 
-    if (
-      nextAssetNo !== undefined &&
-      tools.some((tool) => tool.id !== toolID && tool.assetNo.toLowerCase() === nextAssetNo.toLowerCase())
-    ) {
-      return errorResponse(409, "TOOL_ASSET_NO_DUPLICATE", "assetNo already exists");
-    }
-
     const current = tools[index];
+    const nextGeneratedAssetNo =
+      nextWarehouseID !== undefined && nextWarehouseID !== current.warehouseId
+        ? nextToolAssetNo(nextWarehouseID, tools, toolID)
+        : current.assetNo;
     const updated: Tool = {
       ...current,
-      ...(nextAssetNo !== undefined ? { assetNo: nextAssetNo } : {}),
+      assetNo: nextGeneratedAssetNo,
       ...(nextName !== undefined ? { name: nextName } : {}),
       ...(nextWarehouseID !== undefined ? { warehouseId: nextWarehouseID } : {}),
       ...(nextBaseStatusRaw !== undefined ? { baseStatus: nextBaseStatusRaw as BaseStatus } : {}),
@@ -996,7 +1009,7 @@ export const handlers = [
     const pageSize = Math.min(parsePositiveInt(url.searchParams.get("pageSize"), 10), 100);
     const offset = (page - 1) * pageSize;
 
-    const items = users.map((user) => ({
+    const items = users.filter(isActiveUser).map((user) => ({
       id: user.id,
       department: user.department,
       userCode: user.userCode,
@@ -1037,13 +1050,13 @@ export const handlers = [
       return errorResponse(400, "INVALID_REQUEST", "department, userCode, username, email, password, role are required");
     }
 
-    if (users.some((user) => user.userCode.toLowerCase() === userCode.toLowerCase())) {
+    if (users.some((user) => isActiveUser(user) && user.userCode.toLowerCase() === userCode.toLowerCase())) {
       return errorResponse(409, "USER_CODE_DUPLICATE", "userCode already exists");
     }
-    if (users.some((user) => user.username.toLowerCase() === username.toLowerCase())) {
+    if (users.some((user) => isActiveUser(user) && user.username.toLowerCase() === username.toLowerCase())) {
       return errorResponse(409, "USERNAME_DUPLICATE", "username already exists");
     }
-    if (users.some((user) => user.email.toLowerCase() === email.toLowerCase())) {
+    if (users.some((user) => isActiveUser(user) && user.email.toLowerCase() === email.toLowerCase())) {
       return errorResponse(409, "EMAIL_DUPLICATE", "email already exists");
     }
 
@@ -1055,6 +1068,7 @@ export const handlers = [
       email,
       password,
       role,
+      isActive: true,
     };
 
     users = [created, ...users];
@@ -1132,19 +1146,25 @@ export const handlers = [
 
     if (
       nextUserCode !== undefined &&
-      users.some((user, index) => index !== targetIndex && user.userCode.toLowerCase() === nextUserCode.toLowerCase())
+      users.some(
+        (user, index) => index !== targetIndex && isActiveUser(user) && user.userCode.toLowerCase() === nextUserCode.toLowerCase(),
+      )
     ) {
       return errorResponse(409, "USER_CODE_DUPLICATE", "userCode already exists");
     }
     if (
       nextUsername !== undefined &&
-      users.some((user, index) => index !== targetIndex && user.username.toLowerCase() === nextUsername.toLowerCase())
+      users.some(
+        (user, index) => index !== targetIndex && isActiveUser(user) && user.username.toLowerCase() === nextUsername.toLowerCase(),
+      )
     ) {
       return errorResponse(409, "USERNAME_DUPLICATE", "username already exists");
     }
     if (
       nextEmail !== undefined &&
-      users.some((user, index) => index !== targetIndex && user.email.toLowerCase() === nextEmail.toLowerCase())
+      users.some(
+        (user, index) => index !== targetIndex && isActiveUser(user) && user.email.toLowerCase() === nextEmail.toLowerCase(),
+      )
     ) {
       return errorResponse(409, "EMAIL_DUPLICATE", "email already exists");
     }
@@ -1195,14 +1215,14 @@ export const handlers = [
       return errorResponse(404, "NOT_FOUND", "user not found");
     }
 
-    if (target.role === "admin") {
-      const activeAdminCount = users.filter((user) => user.role === "admin").length;
+    if (target.role === "admin" && isActiveUser(target)) {
+      const activeAdminCount = users.filter((user) => isActiveUser(user) && user.role === "admin").length;
       if (activeAdminCount <= 1) {
         return errorResponse(409, "LAST_ADMIN", "cannot delete the last active admin");
       }
     }
 
-    users = users.filter((user) => user.id !== userID);
+    users = users.map((user) => (user.id === userID ? { ...user, isActive: false } : user));
 
     addAuditLog("delete_user", "user", userID, auth.user.id, {
       username: target.username,

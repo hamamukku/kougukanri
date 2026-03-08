@@ -673,45 +673,45 @@ func getExcelCellValue(row []string, index int) string {
 }
 
 type importExcelColumnIndexes struct {
-	WarehouseName int
-	WarehouseNo   int
-	AssetNo       int
 	ToolName      int
+	AssetNo       int
+	WarehouseName int
+	BaseStatus    int
 	HasHeader     bool
 }
 
 func detectImportExcelColumnIndexes(firstRow []string) importExcelColumnIndexes {
 	indexes := importExcelColumnIndexes{
-		WarehouseName: -1,
-		WarehouseNo:   -1,
-		AssetNo:       -1,
 		ToolName:      -1,
+		AssetNo:       -1,
+		WarehouseName: -1,
+		BaseStatus:    -1,
 		HasHeader:     false,
 	}
 
 	for i, cell := range firstRow {
 		normalized := normalizeImportExcelHeader(cell)
 		switch normalized {
-		case "場所名", "倉庫名", "warehousename":
-			indexes.WarehouseName = i
-			indexes.HasHeader = true
-		case "管理番号", "倉庫番号", "warehouseno":
-			indexes.WarehouseNo = i
+		case "工具名", "toolname":
+			indexes.ToolName = i
 			indexes.HasHeader = true
 		case "工具id", "toolid", "assetno":
 			indexes.AssetNo = i
 			indexes.HasHeader = true
-		case "工具名", "toolname":
-			indexes.ToolName = i
+		case "場所", "場所名", "倉庫名", "place", "placename", "warehouse", "warehousename":
+			indexes.WarehouseName = i
+			indexes.HasHeader = true
+		case "状態", "status", "basestatus":
+			indexes.BaseStatus = i
 			indexes.HasHeader = true
 		}
 	}
 
 	if !indexes.HasHeader {
-		indexes.WarehouseName = 0
-		indexes.WarehouseNo = 1
-		indexes.AssetNo = 2
-		indexes.ToolName = 3
+		indexes.ToolName = 0
+		indexes.AssetNo = 1
+		indexes.WarehouseName = 2
+		indexes.BaseStatus = 3
 	}
 
 	return indexes
@@ -719,17 +719,17 @@ func detectImportExcelColumnIndexes(firstRow []string) importExcelColumnIndexes 
 
 func missingImportExcelRequiredHeaders(indexes importExcelColumnIndexes) []string {
 	missing := make([]string, 0, 4)
-	if indexes.WarehouseName < 0 {
-		missing = append(missing, "場所名")
-	}
-	if indexes.WarehouseNo < 0 {
-		missing = append(missing, "管理番号")
+	if indexes.ToolName < 0 {
+		missing = append(missing, "工具名")
 	}
 	if indexes.AssetNo < 0 {
 		missing = append(missing, "工具ID")
 	}
-	if indexes.ToolName < 0 {
-		missing = append(missing, "工具名")
+	if indexes.WarehouseName < 0 {
+		missing = append(missing, "場所")
+	}
+	if indexes.BaseStatus < 0 {
+		missing = append(missing, "状態")
 	}
 	return missing
 }
@@ -754,21 +754,21 @@ func parseImportExcelRows(rows [][]string) ([]app.ImportExcelRow, []string) {
 	result := make([]app.ImportExcelRow, 0, len(rows))
 	for i := startIndex; i < len(rows); i++ {
 		row := rows[i]
-		warehouseName := getExcelCellValue(row, indexes.WarehouseName)
-		warehouseNo := getExcelCellValue(row, indexes.WarehouseNo)
-		assetNo := getExcelCellValue(row, indexes.AssetNo)
 		toolName := getExcelCellValue(row, indexes.ToolName)
+		assetNo := getExcelCellValue(row, indexes.AssetNo)
+		warehouseName := getExcelCellValue(row, indexes.WarehouseName)
+		baseStatus := getExcelCellValue(row, indexes.BaseStatus)
 
-		if warehouseName == "" && warehouseNo == "" && assetNo == "" && toolName == "" {
+		if toolName == "" && assetNo == "" && warehouseName == "" && baseStatus == "" {
 			continue
 		}
 
 		result = append(result, app.ImportExcelRow{
 			Row:           i + 1,
-			WarehouseName: warehouseName,
-			WarehouseNo:   warehouseNo,
-			AssetNo:       assetNo,
 			ToolName:      toolName,
+			AssetNo:       assetNo,
+			WarehouseName: warehouseName,
+			BaseStatus:    baseStatus,
 		})
 	}
 

@@ -90,17 +90,16 @@ export default function LoginPage() {
 
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 14 }}>
           <div>
-            <div style={{ fontSize: 14, marginBottom: 6 }}>ログインID（ユーザー名またはメール）</div>
+            <div style={{ fontSize: 16, marginBottom: 6 }}>ログインID（ユーザー名またはメール）</div>
             <Input
               value={loginId}
               onChange={(e) => setLoginId(e.target.value)}
-              placeholder="例: admin"
               style={{ fontSize: 16, padding: "12px 12px" }}
             />
           </div>
 
           <div>
-            <div style={{ fontSize: 14, marginBottom: 6 }}>パスワード</div>
+            <div style={{ fontSize: 16, marginBottom: 6 }}>パスワード</div>
             <Input
               type="password"
               value={password}

@@ -21,10 +21,13 @@ type RowError = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  warehouseName: "場所名",
-  warehouseNo: "管理番号",
-  assetNo: "工具ID",
   toolName: "工具名",
+  assetNo: "工具ID",
+  place: "場所",
+  status: "状態",
+  warehouseName: "場所",
+  baseStatus: "状態",
+  warehouseNo: "管理番号",
 };
 
 const ERROR_MESSAGE_LABELS: Record<string, string> = {
@@ -32,7 +35,11 @@ const ERROR_MESSAGE_LABELS: Record<string, string> = {
   "required headers are missing": "必須列が不足しています",
   "excel file is required": "Excelファイルが必要です",
   "sheet not found": "指定したシートが見つかりません",
-  "warehouse name is required": "場所名は必須です",
+  "place is required": "場所は必須です",
+  "status is required": "状態は必須です",
+  "status is invalid": "状態は 貸出可 / 貸出中 / 予約中 / 故障 / 修理中 を指定してください",
+  "warehouseName is required": "場所は必須です",
+  "warehouse name is required": "場所は必須です",
   "assetNo is required": "工具IDは必須です",
   "assetNo duplicates in the same file": "工具IDがファイル内で重複しています",
   "assetNo already exists": "工具IDが既存データと重複しています",
@@ -176,6 +183,14 @@ export default function AdminImportPage() {
     padding: "12px 12px",
   };
 
+  const noteStyle: React.CSSProperties = {
+    fontSize: 16,
+    fontWeight: 600,
+    color: "#475569",
+    lineHeight: 1.8,
+    textAlign: "center",
+  };
+
   // ✅ 取込実行ボタン：黒
   const buttonStyle: React.CSSProperties = {
     minWidth: 160,
@@ -233,10 +248,10 @@ export default function AdminImportPage() {
             />
           </div>
 
-          <div style={{ fontSize: 14, color: "#475569", lineHeight: 1.7, textAlign: "center" }}>
-            <div>・ヘッダー行を使う場合は「場所名 / 管理番号 / 工具ID / 工具名」で作成してください</div>
-            <div>・管理番号は必須です</div>
-            <div>・工具IDは Excel ファイル側で指定してください（必須）</div>
+          <div style={noteStyle}>
+            <div style={{ marginBottom: 4 }}>・ヘッダー行を使う場合は「工具名 / 工具ID / 場所 / 状態」で作成してください</div>
+            <div style={{ marginBottom: 4 }}>・4列すべて必須です</div>
+            <div>・状態は 貸出可 / 貸出中 / 予約中 / 故障 / 修理中 に対応します</div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "center" }}>
@@ -250,7 +265,7 @@ export default function AdminImportPage() {
           <section className="card-surface" style={{ marginTop: 12, padding: 16, textAlign: "center" }}>
             <h2 style={{ margin: 0, fontSize: 18 }}>取込結果</h2>
             <div style={{ marginTop: 10, fontSize: 16 }}>場所作成: {result.warehousesCreated}件</div>
-            <div style={{ fontSize: 16 }}>管理番号更新: {result.warehousesUpdated}件</div>
+            <div style={{ fontSize: 16 }}>場所更新: {result.warehousesUpdated}件</div>
             <div style={{ fontSize: 16 }}>工具作成: {result.toolsCreated}件</div>
           </section>
         ) : null}

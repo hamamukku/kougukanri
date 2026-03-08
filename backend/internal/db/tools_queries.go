@@ -471,7 +471,12 @@ WHERE
             END = $6::text
         )
     )
-ORDER BY asset_no ASC
+ORDER BY
+    CASE
+        WHEN BOOL_AND(asset_no ~ '^[0-9]+$') OVER () THEN asset_no::numeric
+        ELSE NULL
+    END NULLS LAST,
+    asset_no ASC
 LIMIT $7 OFFSET $8
 `
 

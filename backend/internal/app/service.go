@@ -191,6 +191,20 @@ func ValidateDisplayStatus(status string) bool {
 	}
 }
 
+func normalizeImportExcelBaseStatus(status string) (string, bool) {
+	normalized := strings.ToLower(strings.NewReplacer(" ", "", "　", "", "_", "", "-", "").Replace(strings.TrimSpace(status)))
+	switch normalized {
+	case "available", "貸出可", "loaned", "貸出中", "reserved", "予約中":
+		return BaseStatusAvailable, true
+	case "broken", "故障":
+		return BaseStatusBroken, true
+	case "repair", "修理中":
+		return BaseStatusRepair, true
+	default:
+		return "", false
+	}
+}
+
 func normalizeDepartmentName(name string) string {
 	return strings.TrimSpace(name)
 }
@@ -932,9 +946,9 @@ type CreateToolBulkResult struct {
 type ImportExcelRow struct {
 	Row           int
 	WarehouseName string
-	WarehouseNo   string
 	AssetNo       string
 	ToolName      string
+	BaseStatus    string
 }
 
 type ImportExcelRowError struct {
@@ -1088,27 +1102,19 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 
 	rowErrors := make([]ImportExcelRowError, 0)
 	normalizedRows := make([]ImportExcelRow, 0, len(rows))
-	warehouseNoByName := make(map[string]string) // warehouseName -> warehouseNo
-	warehouseNameByNo := make(map[string]string) // warehouseNo -> warehouseName
 	assetNoSeenRow := make(map[string]int)
 
 	for _, row := range rows {
 		normalized := ImportExcelRow{
 			Row:           row.Row,
 			WarehouseName: strings.TrimSpace(row.WarehouseName),
-			WarehouseNo:   strings.TrimSpace(row.WarehouseNo),
 			AssetNo:       strings.TrimSpace(row.AssetNo),
 			ToolName:      strings.TrimSpace(row.ToolName),
+			BaseStatus:    strings.TrimSpace(row.BaseStatus),
 		}
 
 		if normalized.WarehouseName == "" {
-			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseName", "warehouseName is required"))
-		}
-		if normalized.WarehouseNo == "" {
-			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseNo", "warehouseNo is required"))
-		}
-		if strings.Contains(normalized.WarehouseNo, "-") {
-			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseNo", "warehouseNo must not contain '-'"))
+			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "place", "place is required"))
 		}
 		if normalized.AssetNo == "" {
 			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "assetNo", "assetNo is required"))
@@ -1116,24 +1122,22 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 		if normalized.ToolName == "" {
 			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "toolName", "toolName is required"))
 		}
+		if normalized.BaseStatus == "" {
+			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "status", "status is required"))
+		} else {
+			baseStatus, ok := normalizeImportExcelBaseStatus(normalized.BaseStatus)
+			if !ok {
+				rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "status", "status is invalid"))
+			} else {
+				normalized.BaseStatus = baseStatus
+			}
+		}
 		if normalized.AssetNo != "" {
 			key := strings.ToLower(normalized.AssetNo)
 			if firstRow, ok := assetNoSeenRow[key]; ok && firstRow != normalized.Row {
 				rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "assetNo", "assetNo duplicates in the same file"))
 			} else {
 				assetNoSeenRow[key] = normalized.Row
-			}
-		}
-		if normalized.WarehouseName != "" && normalized.WarehouseNo != "" {
-			if seen, ok := warehouseNoByName[normalized.WarehouseName]; ok && seen != normalized.WarehouseNo {
-				rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseNo", "warehouseNo conflicts in the same file"))
-			} else {
-				warehouseNoByName[normalized.WarehouseName] = normalized.WarehouseNo
-			}
-			if seen, ok := warehouseNameByNo[normalized.WarehouseNo]; ok && seen != normalized.WarehouseName {
-				rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseNo", "warehouseNo conflicts in the same file"))
-			} else {
-				warehouseNameByNo[normalized.WarehouseNo] = normalized.WarehouseName
 			}
 		}
 
@@ -1158,41 +1162,8 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 		return ImportExcelResult{}, err
 	}
 	warehouseByName := make(map[string]db.Warehouse, len(existingWarehouses))
-	existingWarehouseNameByNo := make(map[string]string, len(existingWarehouses))
-	existingWarehouseNoConflicts := make(map[string]struct{})
 	for _, warehouse := range existingWarehouses {
 		warehouseByName[warehouse.Name] = warehouse
-		if !warehouse.WarehouseNo.Valid {
-			continue
-		}
-		warehouseNo := strings.TrimSpace(warehouse.WarehouseNo.String)
-		if warehouseNo == "" {
-			continue
-		}
-		if seenName, ok := existingWarehouseNameByNo[warehouseNo]; ok && seenName != warehouse.Name {
-			existingWarehouseNoConflicts[warehouseNo] = struct{}{}
-			continue
-		}
-		existingWarehouseNameByNo[warehouseNo] = warehouse.Name
-	}
-
-	for _, row := range normalizedRows {
-		existing, ok := warehouseByName[row.WarehouseName]
-		if ok && existing.WarehouseNo.Valid && strings.TrimSpace(existing.WarehouseNo.String) != "" && strings.TrimSpace(existing.WarehouseNo.String) != row.WarehouseNo {
-			rowErrors = append(rowErrors, importExcelRowError(row.Row, "warehouseNo", "warehouseNo conflicts with existing warehouse"))
-		}
-		if _, conflicted := existingWarehouseNoConflicts[row.WarehouseNo]; conflicted {
-			rowErrors = append(rowErrors, importExcelRowError(row.Row, "warehouseNo", "warehouseNo conflicts with existing warehouse"))
-			continue
-		}
-		if existingName, exists := existingWarehouseNameByNo[row.WarehouseNo]; exists && existingName != row.WarehouseName {
-			rowErrors = append(rowErrors, importExcelRowError(row.Row, "warehouseNo", "warehouseNo conflicts with existing warehouse"))
-		}
-	}
-	if len(rowErrors) > 0 {
-		return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
-			"rowErrors": rowErrors,
-		})
 	}
 
 	result := ImportExcelResult{}
@@ -1203,9 +1174,7 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 	for _, row := range normalizedRows {
 		currentWarehouse, exists := warehouseByName[row.WarehouseName]
 		if !exists {
-			createWarehouseNo := sql.NullString{String: row.WarehouseNo, Valid: true}
-
-			createdWarehouse, createErr := qtx.CreateWarehouse(ctx, row.WarehouseName, createWarehouseNo)
+			createdWarehouse, createErr := qtx.CreateWarehouse(ctx, row.WarehouseName, sql.NullString{})
 			if createErr != nil {
 				var pqErr *pq.Error
 				if stdErrors.As(createErr, &pqErr) && string(pqErr.Code) == "23505" && pqErr.Constraint == "warehouses_name_key" {
@@ -1225,30 +1194,7 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 			createdWarehouseIDs = append(createdWarehouseIDs, createdWarehouse.ID)
 		}
 
-		if !currentWarehouse.WarehouseNo.Valid || strings.TrimSpace(currentWarehouse.WarehouseNo.String) == "" {
-			updatedWarehouse, updateErr := qtx.UpdateWarehouseNo(ctx, db.UpdateWarehouseNoParams{
-				ID:          currentWarehouse.ID,
-				WarehouseNo: sql.NullString{String: row.WarehouseNo, Valid: true},
-			})
-			if updateErr != nil {
-				if mapped := mapPQError(updateErr); mapped != nil {
-					return ImportExcelResult{}, mapped
-				}
-				return ImportExcelResult{}, updateErr
-			}
-			currentWarehouse = updatedWarehouse
-			warehouseByName[row.WarehouseName] = updatedWarehouse
-			result.WarehousesUpdated++
-			updatedWarehouseIDs = append(updatedWarehouseIDs, updatedWarehouse.ID)
-		} else if strings.TrimSpace(currentWarehouse.WarehouseNo.String) != row.WarehouseNo {
-			return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
-				"rowErrors": []ImportExcelRowError{
-					importExcelRowError(row.Row, "warehouseNo", "warehouseNo conflicts with existing warehouse"),
-				},
-			})
-		}
-
-		createToolParams, normalizeErr := normalizeCreateToolParams(row.AssetNo, row.ToolName, currentWarehouse.ID, BaseStatusAvailable, nil)
+		createToolParams, normalizeErr := normalizeCreateToolParams(row.AssetNo, row.ToolName, currentWarehouse.ID, row.BaseStatus, nil)
 		if normalizeErr != nil {
 			var apiError *apierr.APIError
 			if stdErrors.As(normalizeErr, &apiError) {
@@ -1258,8 +1204,10 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 					field = "assetNo"
 				case strings.Contains(apiError.Message, "toolName"), strings.Contains(apiError.Message, "name"):
 					field = "toolName"
-				case strings.Contains(apiError.Message, "warehouseId"):
-					field = "warehouseName"
+				case strings.Contains(apiError.Message, "warehouseId"), strings.Contains(apiError.Message, "place"):
+					field = "place"
+				case strings.Contains(apiError.Message, "baseStatus"), strings.Contains(apiError.Message, "status"):
+					field = "status"
 				}
 				return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
 					"rowErrors": []ImportExcelRowError{

@@ -129,3 +129,30 @@ func (q *Queries) UpdateWarehouseNo(ctx context.Context, arg UpdateWarehouseNoPa
 	err := row.Scan(&i.ID, &i.Name, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt)
 	return i, err
 }
+
+type UpdateWarehouseParams struct {
+	ID          uuid.UUID
+	Name        string
+	WarehouseNo sql.NullString
+}
+
+const updateWarehouseQuery = `
+UPDATE warehouses
+SET
+    name = $2,
+    warehouse_no = NULLIF($3::text, ''),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, warehouse_no, created_at, updated_at
+`
+
+func (q *Queries) UpdateWarehouse(ctx context.Context, arg UpdateWarehouseParams) (Warehouse, error) {
+	row := q.db.QueryRowContext(ctx, updateWarehouseQuery,
+		arg.ID,
+		arg.Name,
+		arg.WarehouseNo,
+	)
+	var i Warehouse
+	err := row.Scan(&i.ID, &i.Name, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}

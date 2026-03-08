@@ -5,12 +5,14 @@ CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
     department TEXT NOT NULL,
+    user_code TEXT NOT NULL UNIQUE,
     username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT users_user_code_not_blank CHECK (btrim(user_code) <> '')
 );
 
 CREATE TABLE departments (
@@ -37,6 +39,7 @@ CREATE TABLE tools (
     name TEXT NOT NULL,
     warehouse_id UUID NOT NULL REFERENCES warehouses(id),
     base_status TEXT NOT NULL CHECK (base_status IN ('AVAILABLE', 'BROKEN', 'REPAIR')),
+    retired_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -100,6 +103,7 @@ CREATE TABLE user_signup_requests (
 );
 
 CREATE INDEX idx_tools_warehouse_id ON tools(warehouse_id);
+CREATE INDEX idx_tools_retired_at ON tools(retired_at);
 CREATE UNIQUE INDEX idx_tools_tag_id_unique ON tools(tag_id) WHERE tag_id IS NOT NULL;
 CREATE INDEX idx_loan_items_tool_id ON loan_items(tool_id);
 CREATE INDEX idx_loan_items_borrower_id ON loan_items(borrower_id);

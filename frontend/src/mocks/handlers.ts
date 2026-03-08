@@ -21,6 +21,7 @@ type Tool = {
 type User = {
   id: string;
   department: string;
+  userCode: string;
   username: string;
   email: string;
   password: string;
@@ -79,6 +80,7 @@ let users: User[] = [
   {
     id: "u1",
     department: "admin",
+    userCode: "ADM-001",
     username: "admin",
     email: "admin@example.com",
     password: "admin123",
@@ -87,6 +89,7 @@ let users: User[] = [
   {
     id: "u2",
     department: "engineering",
+    userCode: "USR-001",
     username: "user1",
     email: "user1@example.com",
     password: "user12345",
@@ -352,7 +355,10 @@ export const handlers = [
     const offset = (page - 1) * pageSize;
 
     return HttpResponse.json({
-      items: rows.slice(offset, offset + pageSize),
+      items: rows.slice(offset, offset + pageSize).map((item) => ({
+        ...item,
+        toolId: item.assetNo,
+      })),
       page,
       pageSize,
       total,
@@ -536,7 +542,10 @@ export const handlers = [
     const offset = (page - 1) * pageSize;
 
     return HttpResponse.json({
-      items: rows.slice(offset, offset + pageSize),
+      items: rows.slice(offset, offset + pageSize).map((item) => ({
+        ...item,
+        toolId: item.assetNo,
+      })),
       page,
       pageSize,
       total,
@@ -588,10 +597,98 @@ export const handlers = [
     return HttpResponse.json(
       {
         id: tool.id,
+        toolId: tool.assetNo,
         assetNo: tool.assetNo,
         name: tool.name,
         warehouseId: tool.warehouseId,
         baseStatus: tool.baseStatus,
+      },
+      { status: 201 },
+    );
+  }),
+
+  http.post("/api/admin/tools/bulk", async ({ request }) => {
+    const auth = authenticate(request, "admin");
+    if ("error" in auth) return auth.error;
+
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse(400, "INVALID_REQUEST", "invalid request body");
+    }
+
+    const obj = readBody(body);
+    const rawTools = Array.isArray(obj.tools) ? obj.tools : [];
+    if (rawTools.length === 0) {
+      return errorResponse(400, "INVALID_REQUEST", "tools is required");
+    }
+
+    const rowErrors: Array<{ row: number; field: string; message: string }> = [];
+    const nextTools: Tool[] = [];
+    const seenAssetNos = new Set<string>();
+
+    for (const [index, rawItem] of rawTools.entries()) {
+      const item = readBody(rawItem);
+      const row = index + 1;
+      const assetNo = typeof item.assetNo === "string" ? item.assetNo.trim() : "";
+      const name = typeof item.name === "string" ? item.name.trim() : "";
+      const warehouseID = typeof item.warehouseId === "string" ? item.warehouseId.trim() : "";
+      const baseStatusRaw = typeof item.baseStatus === "string" ? item.baseStatus.trim().toUpperCase() : "";
+      const baseStatus: BaseStatus =
+        baseStatusRaw === "BROKEN" || baseStatusRaw === "REPAIR" ? (baseStatusRaw as BaseStatus) : "AVAILABLE";
+
+      if (!assetNo) {
+        rowErrors.push({ row, field: "assetNo", message: "assetNo is required" });
+      }
+      if (!name) {
+        rowErrors.push({ row, field: "name", message: "name is required" });
+      }
+      if (!warehouseID || !warehouses.some((warehouse) => warehouse.id === warehouseID)) {
+        rowErrors.push({ row, field: "warehouseId", message: "warehouseId is invalid" });
+      }
+      if (assetNo) {
+        const normalizedAssetNo = assetNo.toLowerCase();
+        if (seenAssetNos.has(normalizedAssetNo)) {
+          rowErrors.push({ row, field: "assetNo", message: "assetNo duplicates another row" });
+        } else {
+          seenAssetNos.add(normalizedAssetNo);
+        }
+        if (tools.some((tool) => tool.assetNo.toLowerCase() === normalizedAssetNo)) {
+          rowErrors.push({ row, field: "assetNo", message: "assetNo already exists" });
+        }
+      }
+
+      nextTools.push({
+        id: `t-${nextToolNo + index}`,
+        assetNo,
+        name,
+        warehouseId: warehouseID,
+        baseStatus,
+      });
+    }
+
+    if (rowErrors.length > 0) {
+      return errorResponse(400, "INVALID_REQUEST", "invalid tools payload", { rowErrors });
+    }
+
+    nextToolNo += nextTools.length;
+    tools = [...nextTools, ...tools];
+    addAuditLog("create_tools_bulk", "tool", undefined, auth.user.id, {
+      count: nextTools.length,
+      toolIds: nextTools.map((tool) => tool.id),
+    });
+
+    return HttpResponse.json(
+      {
+        items: nextTools.map((tool) => ({
+          id: tool.id,
+          toolId: tool.assetNo,
+          assetNo: tool.assetNo,
+          name: tool.name,
+          warehouseId: tool.warehouseId,
+          baseStatus: tool.baseStatus,
+        })),
       },
       { status: 201 },
     );
@@ -644,10 +741,19 @@ export const handlers = [
     }
 
     const obj = readBody(body);
+    const nextToolId = typeof obj.toolId === "string" ? obj.toolId.trim() : undefined;
+    const rawAssetNo = typeof obj.assetNo === "string" ? obj.assetNo.trim() : undefined;
+    const nextAssetNo = rawAssetNo ?? nextToolId;
     const nextName = typeof obj.name === "string" ? obj.name.trim() : undefined;
     const nextWarehouseID = typeof obj.warehouseId === "string" ? obj.warehouseId.trim() : undefined;
     const nextBaseStatusRaw = typeof obj.baseStatus === "string" ? obj.baseStatus.trim().toUpperCase() : undefined;
 
+    if (rawAssetNo !== undefined && nextToolId !== undefined && rawAssetNo !== nextToolId) {
+      return errorResponse(400, "INVALID_REQUEST", "assetNo and toolId do not match");
+    }
+    if (nextAssetNo !== undefined && !nextAssetNo) {
+      return errorResponse(400, "INVALID_REQUEST", "assetNo is invalid");
+    }
     if (nextName !== undefined && !nextName) {
       return errorResponse(400, "INVALID_REQUEST", "name is invalid");
     }
@@ -665,9 +771,17 @@ export const handlers = [
       return errorResponse(400, "INVALID_REQUEST", "baseStatus is invalid");
     }
 
+    if (
+      nextAssetNo !== undefined &&
+      tools.some((tool) => tool.id !== toolID && tool.assetNo.toLowerCase() === nextAssetNo.toLowerCase())
+    ) {
+      return errorResponse(409, "TOOL_ASSET_NO_DUPLICATE", "assetNo already exists");
+    }
+
     const current = tools[index];
     const updated: Tool = {
       ...current,
+      ...(nextAssetNo !== undefined ? { assetNo: nextAssetNo } : {}),
       ...(nextName !== undefined ? { name: nextName } : {}),
       ...(nextWarehouseID !== undefined ? { warehouseId: nextWarehouseID } : {}),
       ...(nextBaseStatusRaw !== undefined ? { baseStatus: nextBaseStatusRaw as BaseStatus } : {}),
@@ -682,6 +796,7 @@ export const handlers = [
 
     return HttpResponse.json({
       id: updated.id,
+      toolId: updated.assetNo,
       assetNo: updated.assetNo,
       name: updated.name,
       warehouseId: updated.warehouseId,
@@ -884,6 +999,7 @@ export const handlers = [
     const items = users.map((user) => ({
       id: user.id,
       department: user.department,
+      userCode: user.userCode,
       username: user.username,
       email: user.email,
       role: user.role,
@@ -910,16 +1026,20 @@ export const handlers = [
 
     const obj = readBody(body);
     const department = typeof obj.department === "string" ? obj.department.trim() : "";
+    const userCode = typeof obj.userCode === "string" ? obj.userCode.trim() : "";
     const username = typeof obj.username === "string" ? obj.username.trim() : "";
     const email = typeof obj.email === "string" ? obj.email.trim().toLowerCase() : "";
     const password = typeof obj.password === "string" ? obj.password : "";
     const roleRaw = typeof obj.role === "string" ? obj.role.trim().toLowerCase() : "";
     const role: Role = roleRaw === "admin" ? "admin" : "user";
 
-    if (!department || !username || !email || !password) {
-      return errorResponse(400, "INVALID_REQUEST", "department, username, email, password, role are required");
+    if (!department || !userCode || !username || !email || !password) {
+      return errorResponse(400, "INVALID_REQUEST", "department, userCode, username, email, password, role are required");
     }
 
+    if (users.some((user) => user.userCode.toLowerCase() === userCode.toLowerCase())) {
+      return errorResponse(409, "USER_CODE_DUPLICATE", "userCode already exists");
+    }
     if (users.some((user) => user.username.toLowerCase() === username.toLowerCase())) {
       return errorResponse(409, "USERNAME_DUPLICATE", "username already exists");
     }
@@ -930,6 +1050,7 @@ export const handlers = [
     const created: User = {
       id: `u-${nextUserNo++}`,
       department,
+      userCode,
       username,
       email,
       password,
@@ -939,6 +1060,7 @@ export const handlers = [
     users = [created, ...users];
 
     addAuditLog("create_user", "user", created.id, auth.user.id, {
+      userCode: created.userCode,
       username: created.username,
       email: created.email,
       role: created.role,
@@ -948,12 +1070,112 @@ export const handlers = [
       {
         id: created.id,
         department: created.department,
+        userCode: created.userCode,
         username: created.username,
         email: created.email,
         role: created.role,
       },
       { status: 201 },
     );
+  }),
+
+  http.patch("/api/admin/users/:userId", async ({ request, params }) => {
+    const auth = authenticate(request, "admin");
+    if ("error" in auth) return auth.error;
+
+    const userID = String(params.userId ?? "").trim();
+    if (!userID) {
+      return errorResponse(400, "INVALID_REQUEST", "userId is required");
+    }
+
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse(400, "INVALID_REQUEST", "invalid request body");
+    }
+
+    const obj = readBody(body);
+    const targetIndex = users.findIndex((user) => user.id === userID);
+    if (targetIndex === -1) {
+      return errorResponse(404, "NOT_FOUND", "user not found");
+    }
+
+    const nextDepartment = typeof obj.department === "string" ? obj.department.trim() : undefined;
+    const nextUserCode = typeof obj.userCode === "string" ? obj.userCode.trim() : undefined;
+    const nextUsername = typeof obj.username === "string" ? obj.username.trim() : undefined;
+    const nextEmail = typeof obj.email === "string" ? obj.email.trim().toLowerCase() : undefined;
+    const nextRoleRaw = typeof obj.role === "string" ? obj.role.trim().toLowerCase() : undefined;
+    const nextRole = nextRoleRaw === "admin" || nextRoleRaw === "user" ? nextRoleRaw : undefined;
+
+    if (
+      nextDepartment === undefined &&
+      nextUserCode === undefined &&
+      nextUsername === undefined &&
+      nextEmail === undefined &&
+      nextRole === undefined
+    ) {
+      return errorResponse(400, "INVALID_REQUEST", "at least one field is required");
+    }
+    if (nextDepartment !== undefined && !nextDepartment) {
+      return errorResponse(400, "INVALID_REQUEST", "department cannot be empty");
+    }
+    if (nextUserCode !== undefined && !nextUserCode) {
+      return errorResponse(400, "INVALID_REQUEST", "userCode cannot be empty");
+    }
+    if (nextUsername !== undefined && !nextUsername) {
+      return errorResponse(400, "INVALID_REQUEST", "username cannot be empty");
+    }
+    if (nextEmail !== undefined && !nextEmail) {
+      return errorResponse(400, "INVALID_REQUEST", "email cannot be empty");
+    }
+
+    if (
+      nextUserCode !== undefined &&
+      users.some((user, index) => index !== targetIndex && user.userCode.toLowerCase() === nextUserCode.toLowerCase())
+    ) {
+      return errorResponse(409, "USER_CODE_DUPLICATE", "userCode already exists");
+    }
+    if (
+      nextUsername !== undefined &&
+      users.some((user, index) => index !== targetIndex && user.username.toLowerCase() === nextUsername.toLowerCase())
+    ) {
+      return errorResponse(409, "USERNAME_DUPLICATE", "username already exists");
+    }
+    if (
+      nextEmail !== undefined &&
+      users.some((user, index) => index !== targetIndex && user.email.toLowerCase() === nextEmail.toLowerCase())
+    ) {
+      return errorResponse(409, "EMAIL_DUPLICATE", "email already exists");
+    }
+
+    const updated = {
+      ...users[targetIndex],
+      ...(nextDepartment !== undefined ? { department: nextDepartment } : {}),
+      ...(nextUserCode !== undefined ? { userCode: nextUserCode } : {}),
+      ...(nextUsername !== undefined ? { username: nextUsername } : {}),
+      ...(nextEmail !== undefined ? { email: nextEmail } : {}),
+      ...(nextRole !== undefined ? { role: nextRole } : {}),
+    };
+
+    users = users.map((user, index) => (index === targetIndex ? updated : user));
+
+    addAuditLog("update_user", "user", updated.id, auth.user.id, {
+      department: updated.department,
+      userCode: updated.userCode,
+      username: updated.username,
+      email: updated.email,
+      role: updated.role,
+    });
+
+    return HttpResponse.json({
+      id: updated.id,
+      department: updated.department,
+      userCode: updated.userCode,
+      username: updated.username,
+      email: updated.email,
+      role: updated.role,
+    });
   }),
 
   http.delete("/api/admin/users/:userId", ({ request, params }) => {

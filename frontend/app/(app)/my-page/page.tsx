@@ -211,7 +211,7 @@ export default function MyPage() {
                 marginTop: 6,
               }}
             >
-              <div style={{ fontSize: 14 }}>ロール: {profile.role}</div>
+              <div style={{ fontSize: 14 }}>種別: {profile.role}</div>
               <div style={{ fontSize: 14 }}>作成日時: {formatDateTime(profile.createdAt)}</div>
             </div>
 

@@ -51,7 +51,7 @@ $toolB = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/admin/tools" -Headers
 
 Step "create user"
 $user = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/admin/users" -Headers $adminHeaders -ContentType "application/json" -Body (
-  @{ department = "e2e"; username = $userName; email = $userEmail; password = $UserPassword; role = "user" } | ConvertTo-Json
+  @{ department = "e2e"; userCode = $userName; username = $userName; email = $userEmail; password = $UserPassword; role = "user" } | ConvertTo-Json
 )
 
 Step "user login"

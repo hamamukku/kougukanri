@@ -25,7 +25,7 @@ INSERT INTO tools (
     created_at,
     updated_at
 ) VALUES (
-    COALESCE(NULLIF($1, ''), 'T-' || LPAD(nextval('tool_asset_no_seq')::text, 6, '0')),
+    $1,
     $2,
     $3,
     $4,
@@ -33,7 +33,7 @@ INSERT INTO tools (
     NOW(),
     NOW()
 )
-RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 `
 
 func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, error) {
@@ -52,6 +52,7 @@ func (q *Queries) CreateTool(ctx context.Context, arg CreateToolParams) (Tool, e
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
+		&i.RetiredAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -72,7 +73,7 @@ func (q *Queries) GetMaxToolAssetNoByPrefix(ctx context.Context, prefix string) 
 }
 
 const getToolByIDQuery = `
-SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 FROM tools
 WHERE id = $1
 `
@@ -87,6 +88,7 @@ func (q *Queries) GetToolByID(ctx context.Context, id uuid.UUID) (Tool, error) {
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
+		&i.RetiredAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -94,7 +96,7 @@ func (q *Queries) GetToolByID(ctx context.Context, id uuid.UUID) (Tool, error) {
 }
 
 const getToolForUpdateQuery = `
-SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 FROM tools
 WHERE id = $1
 FOR UPDATE
@@ -110,6 +112,7 @@ func (q *Queries) GetToolForUpdate(ctx context.Context, id uuid.UUID) (Tool, err
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
+		&i.RetiredAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -118,6 +121,7 @@ func (q *Queries) GetToolForUpdate(ctx context.Context, id uuid.UUID) (Tool, err
 
 type UpdateToolParams struct {
 	ID          uuid.UUID
+	AssetNo     string
 	Name        string
 	WarehouseID uuid.UUID
 	BaseStatus  string
@@ -125,17 +129,19 @@ type UpdateToolParams struct {
 
 const updateToolQuery = `
 UPDATE tools
-SET name = $2,
-    warehouse_id = $3,
-    base_status = $4,
+SET asset_no = $2,
+    name = $3,
+    warehouse_id = $4,
+    base_status = $5,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 `
 
 func (q *Queries) UpdateTool(ctx context.Context, arg UpdateToolParams) (Tool, error) {
 	row := q.db.QueryRowContext(ctx, updateToolQuery,
 		arg.ID,
+		arg.AssetNo,
 		arg.Name,
 		arg.WarehouseID,
 		arg.BaseStatus,
@@ -148,6 +154,7 @@ func (q *Queries) UpdateTool(ctx context.Context, arg UpdateToolParams) (Tool, e
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
+		&i.RetiredAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -164,7 +171,7 @@ UPDATE tools
 SET tag_id = $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 `
 
 func (q *Queries) UpdateToolTag(ctx context.Context, arg UpdateToolTagParams) (Tool, error) {
@@ -180,6 +187,7 @@ func (q *Queries) UpdateToolTag(ctx context.Context, arg UpdateToolTagParams) (T
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
+		&i.RetiredAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -187,9 +195,10 @@ func (q *Queries) UpdateToolTag(ctx context.Context, arg UpdateToolTagParams) (T
 }
 
 const getToolByTagQuery = `
-SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 FROM tools
 WHERE tag_id = $1
+  AND retired_at IS NULL
 `
 
 func (q *Queries) GetToolByTag(ctx context.Context, tagID string) (Tool, error) {
@@ -202,6 +211,32 @@ func (q *Queries) GetToolByTag(ctx context.Context, tagID string) (Tool, error) 
 		&i.Name,
 		&i.WarehouseID,
 		&i.BaseStatus,
+		&i.RetiredAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const retireToolQuery = `
+UPDATE tools
+SET retired_at = NOW(),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
+`
+
+func (q *Queries) RetireTool(ctx context.Context, id uuid.UUID) (Tool, error) {
+	row := q.db.QueryRowContext(ctx, retireToolQuery, id)
+	var i Tool
+	err := row.Scan(
+		&i.ID,
+		&i.AssetNo,
+		&i.TagID,
+		&i.Name,
+		&i.WarehouseID,
+		&i.BaseStatus,
+		&i.RetiredAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -255,6 +290,11 @@ WITH tool_state AS (
         t.warehouse_id,
         w.name AS warehouse_name,
         t.base_status,
+        EXISTS (
+            SELECT 1
+            FROM loan_items li_history
+            WHERE li_history.tool_id = t.id
+        ) AS has_loan_history,
         loan.start_date AS loan_start_date,
         loan.due_date AS loan_due_date,
         reserve.start_date AS reserved_start_date,
@@ -281,7 +321,8 @@ WITH tool_state AS (
         LIMIT 1
     ) AS reserve ON TRUE
     WHERE
-        (NULLIF($2::text, '') IS NULL OR t.warehouse_id = NULLIF($2::text, '')::uuid)
+        t.retired_at IS NULL
+        AND (NULLIF($2::text, '') IS NULL OR t.warehouse_id = NULLIF($2::text, '')::uuid)
         AND (
             $3::text = ''
             OR (
@@ -342,6 +383,11 @@ WITH tool_state AS (
         t.warehouse_id,
         w.name AS warehouse_name,
         t.base_status,
+        EXISTS (
+            SELECT 1
+            FROM loan_items li_history
+            WHERE li_history.tool_id = t.id
+        ) AS has_loan_history,
         loan.start_date AS loan_start_date,
         loan.due_date AS loan_due_date,
         reserve.start_date AS reserved_start_date,
@@ -368,7 +414,8 @@ WITH tool_state AS (
         LIMIT 1
     ) AS reserve ON TRUE
     WHERE
-        (NULLIF($2::text, '') IS NULL OR t.warehouse_id = NULLIF($2::text, '')::uuid)
+        t.retired_at IS NULL
+        AND (NULLIF($2::text, '') IS NULL OR t.warehouse_id = NULLIF($2::text, '')::uuid)
         AND (
             $3::text = ''
             OR (
@@ -386,6 +433,7 @@ SELECT
     warehouse_id,
     warehouse_name,
     base_status,
+    has_loan_history,
     CASE
         WHEN base_status = 'BROKEN' THEN 'BROKEN'
         WHEN base_status = 'REPAIR' THEN 'REPAIR'
@@ -453,6 +501,7 @@ func (q *Queries) ListToolsWithDisplay(ctx context.Context, arg ListToolsWithDis
 			&i.WarehouseID,
 			&i.WarehouseName,
 			&i.BaseStatus,
+			&i.HasLoanHistory,
 			&i.DisplayStatus,
 			&i.DisplayStartDate,
 			&i.DisplayDueDate,

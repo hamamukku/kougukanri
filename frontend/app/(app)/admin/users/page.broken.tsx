@@ -1,6 +1,4 @@
-﻿// frontend/app/(app)/admin/users/page.tsx
-// 笨・window.confirm 繧偵ｄ繧√※縲檎判髱｢蜀・Δ繝ｼ繝繝ｫ縲阪↓縺吶ｋ螳悟・迚・
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -14,7 +12,6 @@ type Role = "user" | "admin";
 type UserItem = {
   id: string;
   department: string;
-  userCode: string;
   username: string;
   email: string;
   role: Role;
@@ -23,7 +20,6 @@ type UserItem = {
 
 type EditingUserDraft = {
   department: string;
-  userCode: string;
   username: string;
   email: string;
   role: Role;
@@ -57,8 +53,8 @@ type Department = {
 
 const USER_PAGE_SIZE = 10;
 const ROLE_LABEL_MAP: Record<Role, string> = {
-  user: "一般ユーザー",
-  admin: "管理者",
+  user: "荳闊ｬ繝ｦ繝ｼ繧ｶ繝ｼ",
+  admin: "邂｡逅・・,
 };
 const ROLE_OPTIONS: Array<{ value: Role; label: string }> = [
   { value: "user", label: ROLE_LABEL_MAP.user },
@@ -137,7 +133,7 @@ function ConfirmModal(props: {
 
         <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 18 }}>
           <Button type="button" variant="ghost" onClick={props.onCancel} disabled={props.busy} style={modalBtnStyle}>
-            {props.cancelText ?? "キャンセル"}
+            {props.cancelText ?? "繧ｭ繝｣繝ｳ繧ｻ繝ｫ"}
           </Button>
 
           <Button
@@ -147,7 +143,7 @@ function ConfirmModal(props: {
             disabled={props.busy}
             style={modalBtnStyle}
           >
-            {props.busy ? "処理中..." : props.okText ?? "OK"}
+            {props.busy ? "蜃ｦ逅・ｸｭ..." : props.okText ?? "OK"}
           </Button>
         </div>
       </div>
@@ -157,7 +153,6 @@ function ConfirmModal(props: {
 
 export default function AdminUsersPage() {
   const [department, setDepartment] = useState("");
-  const [userCode, setUserCode] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -188,14 +183,13 @@ export default function AdminUsersPage() {
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
 
-  // 笨・confirm modal state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmTitle, setConfirmTitle] = useState("確認");
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmDanger, setConfirmDanger] = useState(false);
   const [confirmOkText, setConfirmOkText] = useState("OK");
-  const [confirmCancelText, setConfirmCancelText] = useState("キャンセル");
+  const [confirmCancelText, setConfirmCancelText] = useState("繧ｭ繝｣繝ｳ繧ｻ繝ｫ");
   const [confirmAction, setConfirmAction] = useState<(() => Promise<void>) | null>(null);
 
   const openConfirm = (params: {
@@ -210,7 +204,7 @@ export default function AdminUsersPage() {
     setConfirmMessage(params.message);
     setConfirmDanger(!!params.dangerOk);
     setConfirmOkText(params.okText ?? "OK");
-    setConfirmCancelText(params.cancelText ?? "キャンセル");
+    setConfirmCancelText(params.cancelText ?? "繧ｭ繝｣繝ｳ繧ｻ繝ｫ");
     setConfirmAction(() => params.action);
     setConfirmBusy(false);
     setConfirmOpen(true);
@@ -234,63 +228,6 @@ export default function AdminUsersPage() {
     }
   };
 
-  const totalUserPages = useMemo(() => Math.max(1, Math.ceil(userTotal / USER_PAGE_SIZE)), [userTotal]);
-
-  const startEditingUser = (item: UserItem) => {
-    if (deletingId || savingUserId || editingUserId) return;
-    setEditingUserId(item.id);
-    setEditingUserDraft({
-      department: item.department,
-      userCode: item.userCode,
-      username: item.username,
-      email: item.email,
-      role: item.role,
-    });
-  };
-
-  const cancelEditingUser = () => {
-    setEditingUserId(null);
-    setEditingUserDraft(null);
-  };
-
-  const onSaveUser = async (item: UserItem) => {
-    if (savingUserId || deletingId || editingUserId !== item.id || !editingUserDraft) return;
-
-    const dept = editingUserDraft.department.trim();
-    const nextUserCode = editingUserDraft.userCode.trim();
-    const userName = editingUserDraft.username.trim();
-    const userEmail = editingUserDraft.email.trim().toLowerCase();
-    const userRole = editingUserDraft.role;
-
-    if (!dept || !nextUserCode || !userName || !userEmail) {
-      setErr("必須項目を入力してください。");
-      return;
-    }
-
-    setSavingUserId(item.id);
-    setErr(null);
-    try {
-      await apiFetchJson<UserItem>(`/api/admin/users/${item.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          department: dept,
-          userCode: nextUserCode,
-          username: userName,
-          email: userEmail,
-          role: userRole,
-        }),
-      });
-      cancelEditingUser();
-      await loadUsers(userPage);
-    } catch (e: unknown) {
-      const message = handleApiError(e);
-      if (message) setErr(message);
-    } finally {
-      setSavingUserId(null);
-    }
-  };
-
   const handleApiError = useCallback(
     (error: unknown): string | null => {
       if (isHttpError(error) && error.status === 401) {
@@ -302,26 +239,6 @@ export default function AdminUsersPage() {
       if (isHttpError(error) && error.status === 403) {
         router.push("/tools");
         return null;
-      }
-
-      if (isHttpError(error)) {
-        const body = error.body;
-        if (body && typeof body === "object") {
-          const envelope = body as {
-            error?: { code?: unknown; message?: unknown };
-            message?: unknown;
-          };
-          if (envelope.error?.code === "USER_CODE_DUPLICATE") {
-            return "このユーザーIDは既に使われています";
-          }
-          if (envelope.error?.message === "userCode already exists" || envelope.message === "userCode already exists") {
-            return "このユーザーIDは既に使われています";
-          }
-        }
-
-        if (error.message === "userCode already exists") {
-          return "このユーザーIDは既に使われています";
-        }
       }
 
       return getHttpErrorMessage(error);
@@ -396,9 +313,63 @@ export default function AdminUsersPage() {
     void loadPendingRequests();
   }, [loadPendingRequests]);
 
+  const totalUserPages = useMemo(() => Math.max(1, Math.ceil(userTotal / USER_PAGE_SIZE)), [userTotal]);
+
+  const startEditingUser = (item: UserItem) => {
+    if (deletingId || savingUserId) return;
+    setEditingUserId(item.id);
+    setEditingUserDraft({
+      department: item.department,
+      username: item.username,
+      email: item.email,
+      role: item.role,
+    });
+  };
+
+  const cancelEditingUser = () => {
+    setEditingUserId(null);
+    setEditingUserDraft(null);
+  };
+
+  const onSaveUser = async (item: UserItem) => {
+    if (savingUserId || deletingId || editingUserId !== item.id || !editingUserDraft) return;
+
+    const dept = editingUserDraft.department.trim();
+    const userName = editingUserDraft.username.trim();
+    const userEmail = editingUserDraft.email.trim().toLowerCase();
+    const userRole = editingUserDraft.role;
+
+    if (!dept || !userName || !userEmail) {
+      setErr("必須項目を入力してください。");
+      return;
+    }
+
+    setSavingUserId(item.id);
+    setErr(null);
+    try {
+      await apiFetchJson<UserItem>(`/api/admin/users/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          department: dept,
+          username: userName,
+          email: userEmail,
+          role: userRole,
+        }),
+      });
+      cancelEditingUser();
+      await loadUsers(userPage);
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    } finally {
+      setSavingUserId(null);
+    }
+  };
+
   const onCreate = async () => {
     if (submitting) return;
-    if (!department || !userCode.trim() || !username.trim() || !email.trim() || !password) return;
+    if (!department || !username.trim() || !email.trim() || !password) return;
 
     setSubmitting(true);
     setErr(null);
@@ -409,7 +380,6 @@ export default function AdminUsersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           department,
-          userCode: userCode.trim(),
           username: username.trim(),
           email: email.trim(),
           password,
@@ -417,7 +387,6 @@ export default function AdminUsersPage() {
         }),
       });
 
-      setUserCode("");
       setUsername("");
       setEmail("");
       setPassword("");
@@ -436,16 +405,15 @@ export default function AdminUsersPage() {
     }
   };
 
-  // 笨・繝ｦ繝ｼ繧ｶ繝ｼ蜑企勁・・onfirm modal・・
   const onDelete = async (target: UserItem) => {
     if (deletingId || submitting || approvingId) return;
 
     openConfirm({
-      title: "削除の確認",
-      message: `ユーザー「${target.username}」を削除します。よろしいですか？`,
+      title: "蜑企勁遒ｺ隱・,
+      message: `繝ｦ繝ｼ繧ｶ繝ｼ縲・{target.username}縲阪ｒ蜑企勁縺励∪縺吶ゅｈ繧阪＠縺・〒縺吶°・歔,
       dangerOk: true,
-      okText: "削除する",
-      cancelText: "キャンセル",
+      okText: "蜑企勁縺吶ｋ",
+      cancelText: "繧ｭ繝｣繝ｳ繧ｻ繝ｫ",
       action: async () => {
         setDeletingId(target.id);
         setErr(null);
@@ -560,16 +528,15 @@ export default function AdminUsersPage() {
     }
   };
 
-  // 笨・驛ｨ鄂ｲ蜑企勁・・onfirm modal・・
   const onDeleteDepartment = async (target: Department) => {
-    if (deletingDepartmentId || savingDepartment) return;
+    if (deletingDepartmentId || savingDepartment || savingDepartmentId) return;
 
     openConfirm({
-      title: "削除の確認",
-      message: `部署「${target.name}」を削除します。よろしいですか？`,
+      title: "蜑企勁遒ｺ隱・,
+      message: `驛ｨ鄂ｲ縲・{target.name}縲阪ｒ蜑企勁縺励∪縺吶ゅｈ繧阪＠縺・〒縺吶°・歔,
       dangerOk: true,
-      okText: "削除する",
-      cancelText: "キャンセル",
+      okText: "蜑企勁縺吶ｋ",
+      cancelText: "繧ｭ繝｣繝ｳ繧ｻ繝ｫ",
       action: async () => {
         setDeletingDepartmentId(target.id);
         setErr(null);
@@ -595,7 +562,6 @@ export default function AdminUsersPage() {
     });
   };
 
-  // ・医％縺薙°繧我ｸ九・縲√≠縺ｪ縺溘・迴ｾ陦袈I謾ｹ騾迚医↓蜷医ｏ縺帙※縺昴・縺ｾ縺ｾ・・
   const labelStyle: React.CSSProperties = {
     fontSize: 16,
     fontWeight: 700,
@@ -631,7 +597,7 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <main className="admin-users-page">
+    <main>
       <ConfirmModal
         open={confirmOpen}
         title={confirmTitle}
@@ -644,29 +610,14 @@ export default function AdminUsersPage() {
         onCancel={closeConfirm}
       />
 
-      <h1>ユーザー・部署管理</h1>
+      <h1>繝ｦ繝ｼ繧ｶ繝ｼ繝ｻ驛ｨ鄂ｲ邂｡逅・/h1>
 
       <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
-        <h2 style={{ marginBottom: 8 }}>ユーザー作成</h2>
+        <h2 style={{ marginBottom: 8 }}>繝ｦ繝ｼ繧ｶ繝ｼ菴懈・</h2>
 
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
           <div>
-            <div style={labelStyle}>ユーザーID</div>
-            <Input value={userCode} onChange={(e) => setUserCode(e.target.value)} placeholder="" style={inputStyle} />
-          </div>
-
-          <div>
-            <div style={labelStyle}>ユーザー名</div>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="" style={inputStyle} />
-          </div>
-
-          <div>
-            <div style={labelStyle}>メール</div>
-            <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="" style={inputStyle} />
-          </div>
-
-          <div>
-            <div style={labelStyle}>部署</div>
+            <div style={labelStyle}>驛ｨ鄂ｲ</div>
             <select value={department} onChange={(e) => setDepartment(e.target.value)} style={selectStyle}>
               {departments.map((item) => (
                 <option key={item.id} value={item.name}>
@@ -677,7 +628,22 @@ export default function AdminUsersPage() {
           </div>
 
           <div>
-            <div style={labelStyle}>種別</div>
+            <div style={labelStyle}>繝ｦ繝ｼ繧ｶ繝ｼ蜷・/div>
+            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="user1" style={inputStyle} />
+          </div>
+
+          <div>
+            <div style={labelStyle}>繝｡繝ｼ繝ｫ</div>
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user1@example.com" style={inputStyle} />
+          </div>
+
+          <div>
+            <div style={labelStyle}>繝代せ繝ｯ繝ｼ繝・/div>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={inputStyle} />
+          </div>
+
+          <div>
+            <div style={labelStyle}>繝ｭ繝ｼ繝ｫ</div>
             <select value={role} onChange={(e) => setRole(e.target.value as Role)} style={selectStyle}>
               {ROLE_OPTIONS.map((item) => (
                 <option key={item.value} value={item.value}>
@@ -687,61 +653,153 @@ export default function AdminUsersPage() {
             </select>
           </div>
 
-          <div>
-            <div style={labelStyle}>パスワード</div>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={inputStyle} />
-          </div>
-
           <div style={createButtonWrapStyle}>
             <Button
               type="button"
               onClick={onCreate}
-              disabled={submitting || !department || !userCode.trim() || !username.trim() || !email.trim() || !password}
+              disabled={submitting || !department || !username.trim() || !email.trim() || !password}
               style={createButtonStyle}
             >
-              {submitting ? "読み込み中..." : "ユーザーを作成"}
+              {submitting ? "菴懈・荳ｭ..." : "繝ｦ繝ｼ繧ｶ繝ｼ繧剃ｽ懈・"}
             </Button>
           </div>
         </div>
       </section>
 
-      {err ? <p style={{ color: "var(--danger)", marginTop: 12 }}>エラー: {err}</p> : null}
+      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
+        <h2 style={{ marginBottom: 8 }}>驛ｨ鄂ｲ邂｡逅・/h2>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Input value={newDepartmentName} onChange={(e) => setNewDepartmentName(e.target.value)} placeholder="驛ｨ鄂ｲ蜷・ />
+          <Button type="button" onClick={onAddDepartment} disabled={savingDepartment || !newDepartmentName.trim()}>
+            {savingDepartment ? "霑ｽ蜉荳ｭ..." : "驛ｨ鄂ｲ繧定ｿｽ蜉"}
+          </Button>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>部署</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {departments.map((item) => (
+                <tr key={item.id}>
+                  <td style={{ padding: "8px 0" }}>
+                    {editingDepartmentId === item.id ? (
+                      <Input
+                        value={editingDepartmentName}
+                        onChange={(e) => setEditingDepartmentName(e.target.value)}
+                        style={inputStyle}
+                      />
+                    ) : (
+                      item.name
+                    )}
+                  </td>
+                  <td style={{ padding: "8px 0" }}>
+                    {editingDepartmentId === item.id ? (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <Button
+                          type="button"
+                          onClick={() => void onSaveDepartment(item)}
+                          disabled={savingDepartmentId === item.id || !editingDepartmentName.trim()}
+                        >
+                          {savingDepartmentId === item.id ? "保存中..." : "保存"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={savingDepartmentId !== null || savingDepartment}
+                          onClick={cancelEditingDepartment}
+                        >
+                          キャンセル
+                        </Button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <Button
+                          type="button"
+                          onClick={() => startEditingDepartment(item)}
+                          disabled={
+                            deletingDepartmentId !== null ||
+                            savingDepartment ||
+                            savingDepartmentId !== null ||
+                            editingDepartmentId !== null
+                          }
+                        >
+                          編集
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          disabled={
+                            deletingDepartmentId !== null ||
+                            savingDepartment ||
+                            savingDepartmentId !== null ||
+                            editingDepartmentId !== null
+                          }
+                          onClick={() => void onDeleteDepartment(item)}
+                        >
+                          {deletingDepartmentId === item.id ? "削除中..." : "削除"}
+                        </Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {err ? <p style={{ color: "var(--danger)", marginTop: 12 }}>繧ｨ繝ｩ繝ｼ: {err}</p> : null}
 
       <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
-        <h2 style={{ marginBottom: 8 }}>ユーザー一覧</h2>
+        <h2 style={{ marginBottom: 8 }}>繝ｦ繝ｼ繧ｶ繝ｼ荳隕ｧ</h2>
 
         {loadingUsers ? (
-          <p>読み込み中...</p>
+          <p>隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</p>
         ) : users.length === 0 ? (
-          <p>ユーザーがありません。</p>
+          <p>繝ｦ繝ｼ繧ｶ繝ｼ縺後≠繧翫∪縺帙ｓ縲・/p>
         ) : (
           <>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ユーザーID</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ユーザー名</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>メール</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>部署</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>種別</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>作成日時</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ID</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>驛ｨ鄂ｲ</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>繝ｦ繝ｼ繧ｶ繝ｼ蜷・/th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>繝｡繝ｼ繝ｫ</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>繝ｭ繝ｼ繝ｫ</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>菴懈・譌･譎・/th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>謫堺ｽ・/th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((item) => (
                   <tr key={item.id}>
+                    <td style={{ padding: "8px 0" }}>{item.id}</td>
                     <td style={{ padding: "8px 0" }}>
                       {editingUserId === item.id ? (
-                        <Input
-                          value={editingUserDraft?.userCode ?? ""}
+                        <select
+                          value={editingUserDraft?.department ?? ""}
                           onChange={(e) =>
-                            setEditingUserDraft((prev) => (prev ? { ...prev, userCode: e.target.value } : prev))
+                            setEditingUserDraft((prev) =>
+                              prev ? { ...prev, department: e.target.value } : prev,
+                            )
                           }
-                          style={inputStyle}
-                        />
+                          style={{ width: "100%" }}
+                        >
+                          {departments.map((departmentItem) => (
+                            <option key={departmentItem.id} value={departmentItem.name}>
+                              {departmentItem.name}
+                            </option>
+                          ))}
+                        </select>
                       ) : (
-                        item.userCode
+                        item.department
                       )}
                     </td>
                     <td style={{ padding: "8px 0" }}>
@@ -775,27 +833,6 @@ export default function AdminUsersPage() {
                     <td style={{ padding: "8px 0" }}>
                       {editingUserId === item.id ? (
                         <select
-                          value={editingUserDraft?.department ?? ""}
-                          onChange={(e) =>
-                            setEditingUserDraft((prev) =>
-                              prev ? { ...prev, department: e.target.value } : prev,
-                            )
-                          }
-                          style={selectStyle}
-                        >
-                          {departments.map((departmentItem) => (
-                            <option key={departmentItem.id} value={departmentItem.name}>
-                              {departmentItem.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        item.department
-                      )}
-                    </td>
-                    <td style={{ padding: "8px 0" }}>
-                      {editingUserId === item.id ? (
-                        <select
                           value={editingUserDraft?.role ?? "user"}
                           onChange={(e) =>
                             setEditingUserDraft((prev) =>
@@ -804,9 +841,9 @@ export default function AdminUsersPage() {
                           }
                           style={selectStyle}
                         >
-                          {ROLE_OPTIONS.map((roleOption) => (
-                            <option key={roleOption.value} value={roleOption.value}>
-                              {roleOption.label}
+                          {ROLE_OPTIONS.map((item) => (
+                            <option key={item.value} value={item.value}>
+                              {item.label}
                             </option>
                           ))}
                         </select>
@@ -817,13 +854,13 @@ export default function AdminUsersPage() {
                     <td style={{ padding: "8px 0" }}>{formatDateTime(item.createdAt)}</td>
                     <td style={{ padding: "8px 0" }}>
                       {editingUserId === item.id ? (
-                        <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 8 }}>
                           <Button
                             type="button"
                             onClick={() => void onSaveUser(item)}
                             disabled={savingUserId === item.id}
                           >
-                            {savingUserId === item.id ? "保存中..." : "保存"}
+                            {savingUserId === item.id ? "菫晏ｭ倅ｸｭ..." : "菫晏ｭ・}
                           </Button>
                           <Button
                             type="button"
@@ -831,25 +868,24 @@ export default function AdminUsersPage() {
                             onClick={cancelEditingUser}
                             disabled={savingUserId !== null}
                           >
-                            キャンセル
+                            繧ｭ繝｣繝ｳ繧ｻ繝ｫ
                           </Button>
                         </div>
                       ) : (
-                        <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 8 }}>
                           <Button
                             type="button"
                             onClick={() => startEditingUser(item)}
                             disabled={deletingId !== null || savingUserId !== null || editingUserId !== null}
                           >
-                            編集
-                          </Button>
+                            邱ｨ髮・                          </Button>
                           <Button
                             type="button"
                             variant="danger"
-                            disabled={deletingId !== null || savingUserId !== null}
+                            disabled={deletingId !== null}
                             onClick={() => void onDelete(item)}
                           >
-                            {deletingId === item.id ? "削除中..." : "削除"}
+                            {deletingId === item.id ? "蜑企勁荳ｭ..." : "蜑企勁"}
                           </Button>
                         </div>
                       )}
@@ -866,12 +902,11 @@ export default function AdminUsersPage() {
                 onClick={() => setUserPage((prev) => prev - 1)}
                 disabled={userPage <= 1 || loadingUsers}
               >
-                前へ
+                蜑阪∈
               </Button>
 
               <span>
-                {userPage} / {totalUserPages} {userTotal}件
-              </span>
+                {userPage} / {totalUserPages} 繝壹・繧ｸ・亥・ {userTotal} 莉ｶ・・              </span>
 
               <Button
                 type="button"
@@ -879,7 +914,7 @@ export default function AdminUsersPage() {
                 onClick={() => setUserPage((prev) => prev + 1)}
                 disabled={userPage >= totalUserPages || loadingUsers}
               >
-                次へ
+                谺｡縺ｸ
               </Button>
             </div>
           </>
@@ -887,107 +922,22 @@ export default function AdminUsersPage() {
       </section>
 
       <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
-        <h2 style={{ marginBottom: 8 }}>部署管理</h2>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ flex: "0 1 320px", minWidth: 220 }}>
-            <Input value={newDepartmentName} onChange={(e) => setNewDepartmentName(e.target.value)} placeholder="部署名" />
-          </div>
-          <Button type="button" onClick={onAddDepartment} disabled={savingDepartment || !newDepartmentName.trim()}>
-            {savingDepartment ? "読み込み中..." : "部署を追加"}
-          </Button>
-        </div>
-
-        <div style={{ marginTop: 10 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>部署名</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {departments.map((item) => (
-                <tr key={item.id}>
-                  <td style={{ padding: "8px 0" }}>
-                    {editingDepartmentId === item.id ? (
-                      <Input
-                        value={editingDepartmentName}
-                        onChange={(e) => setEditingDepartmentName(e.target.value)}
-                        style={inputStyle}
-                      />
-                    ) : (
-                      item.name
-                    )}
-                  </td>
-                  <td style={{ padding: "8px 0" }}>
-                    {editingDepartmentId === item.id ? (
-                      <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-                        <Button
-                          type="button"
-                          onClick={() => void onSaveDepartment(item)}
-                          disabled={savingDepartmentId === item.id || !editingDepartmentName.trim()}
-                        >
-                          {savingDepartmentId === item.id ? "保存中..." : "保存"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          disabled={savingDepartmentId !== null}
-                          onClick={cancelEditingDepartment}
-                        >
-                          キャンセル
-                        </Button>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-                        <Button
-                          type="button"
-                          onClick={() => startEditingDepartment(item)}
-                          disabled={
-                            deletingDepartmentId !== null ||
-                            savingDepartment ||
-                            savingDepartmentId !== null ||
-                            editingDepartmentId !== null
-                          }
-                        >
-                          編集
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="danger"
-                          disabled={deletingDepartmentId !== null || savingDepartmentId !== null || editingDepartmentId !== null}
-                          onClick={() => void onDeleteDepartment(item)}
-                        >
-                          {deletingDepartmentId === item.id ? "削除中..." : "削除"}
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="card-surface" style={{ marginTop: 12, padding: 12 }}>
-        <h2 style={{ marginBottom: 8 }}>申請待ち一覧</h2>
+        <h2 style={{ marginBottom: 8 }}>逕ｳ隲句ｾ・■荳隕ｧ</h2>
 
         {loadingPending ? (
-          <p>読み込み中...</p>
+          <p>隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</p>
         ) : pendingRequests.length === 0 ? (
-          <p>申請待ちはありません。</p>
+          <p>逕ｳ隲句ｾ・■縺ｯ縺ゅｊ縺ｾ縺帙ｓ縲・/p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>部署</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ユーザー名</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>メール</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>申請日時</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>ステータス</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>驛ｨ鄂ｲ</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>繝ｦ繝ｼ繧ｶ繝ｼ蜷・/th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>繝｡繝ｼ繝ｫ</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>逕ｳ隲区律譎・/th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>繧ｹ繝・・繧ｿ繧ｹ</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>謫堺ｽ・/th>
               </tr>
             </thead>
             <tbody>
@@ -999,11 +949,9 @@ export default function AdminUsersPage() {
                   <td style={{ padding: "8px 0" }}>{formatDateTime(item.requestedAt)}</td>
                   <td style={{ padding: "8px 0" }}>{item.status}</td>
                   <td style={{ padding: "8px 0" }}>
-                    <div style={{ display: "flex", justifyContent: "center" }}>
-                      <Button type="button" onClick={() => onApprove(item.id)} disabled={approvingId !== null}>
-                        {approvingId === item.id ? "承認中..." : "承認"}
-                      </Button>
-                    </div>
+                    <Button type="button" onClick={() => onApprove(item.id)} disabled={approvingId !== null}>
+                      {approvingId === item.id ? "謇ｿ隱堺ｸｭ..." : "謇ｿ隱・}
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -1011,34 +959,6 @@ export default function AdminUsersPage() {
           </table>
         )}
       </section>
-      <style jsx>{`
-        .admin-users-page > h1 {
-          font-size: 28px;
-          line-height: 1.2;
-          margin: 0 0 12px;
-        }
-
-        .admin-users-page :global(table) {
-          width: 100%;
-          border-collapse: collapse;
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-        }
-
-        .admin-users-page :global(table th),
-        .admin-users-page :global(table td) {
-          text-align: center !important;
-          vertical-align: middle;
-          padding: 10px 12px !important;
-          border-bottom: 1px solid #e2e8f0 !important;
-          line-height: 1.4;
-        }
-
-        .admin-users-page :global(table th) {
-          background: #f8fafc !important;
-          font-weight: 700 !important;
-        }
-      `}</style>
     </main>
   );
 }

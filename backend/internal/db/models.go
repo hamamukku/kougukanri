@@ -11,6 +11,7 @@ type User struct {
 	ID           uuid.UUID
 	Role         string
 	Department   string
+	UserCode     string
 	Username     string
 	Email        string
 	PasswordHash string
@@ -23,6 +24,7 @@ type UserSafe struct {
 	ID         uuid.UUID
 	Role       string
 	Department string
+	UserCode   string
 	Username   string
 	Email      string
 	IsActive   bool
@@ -65,6 +67,7 @@ type Tool struct {
 	Name        string
 	WarehouseID uuid.UUID
 	BaseStatus  string
+	RetiredAt   sql.NullTime
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -76,6 +79,7 @@ type ToolWithDisplay struct {
 	WarehouseID                 uuid.UUID
 	WarehouseName               string
 	BaseStatus                  string
+	HasLoanHistory              bool
 	DisplayStatus               string
 	DisplayStartDate            sql.NullTime
 	DisplayDueDate              sql.NullTime

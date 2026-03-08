@@ -64,7 +64,7 @@ require_value "$tool_id" "tool id"
 curl -fsS -X POST "$BASE_URL/api/admin/users" \
   -H "Authorization: Bearer $admin_token" \
   -H "Content-Type: application/json" \
-  -d "{\"department\":\"smoke\",\"username\":\"$smoke_username\",\"email\":\"$smoke_email\",\"password\":\"$SMOKE_USER_PASSWORD\",\"role\":\"user\"}" >/dev/null
+  -d "{\"department\":\"smoke\",\"userCode\":\"$smoke_username\",\"username\":\"$smoke_username\",\"email\":\"$smoke_email\",\"password\":\"$SMOKE_USER_PASSWORD\",\"role\":\"user\"}" >/dev/null
 
 user_login_resp="$(curl -fsS -X POST "$BASE_URL/api/auth/login" \
   -H "Content-Type: application/json" \

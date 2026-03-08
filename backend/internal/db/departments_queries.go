@@ -124,6 +124,22 @@ func (q *Queries) CountDepartmentUsage(ctx context.Context, name string) (int64,
 	return count, err
 }
 
+const updateDepartmentByIDQuery = `
+UPDATE departments
+SET
+    name = $2,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, created_at, updated_at
+`
+
+func (q *Queries) UpdateDepartmentByID(ctx context.Context, id uuid.UUID, name string) (Department, error) {
+	row := q.db.QueryRowContext(ctx, updateDepartmentByIDQuery, id, name)
+	var i Department
+	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}
+
 const deleteDepartmentByIDQuery = `
 DELETE FROM departments
 WHERE id = $1

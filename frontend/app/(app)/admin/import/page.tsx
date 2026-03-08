@@ -21,23 +21,28 @@ type RowError = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  warehouseName: "倉庫名",
-  warehouseNo: "倉庫番号",
+  warehouseName: "場所名",
+  warehouseNo: "管理番号",
+  assetNo: "工具ID",
   toolName: "工具名",
 };
 
 const ERROR_MESSAGE_LABELS: Record<string, string> = {
   "invalid import payload": "インポート内容に不備があります",
+  "required headers are missing": "必須列が不足しています",
   "excel file is required": "Excelファイルが必要です",
   "sheet not found": "指定したシートが見つかりません",
-  "warehouse name is required": "倉庫名は必須です",
+  "warehouse name is required": "場所名は必須です",
+  "assetNo is required": "工具IDは必須です",
+  "assetNo duplicates in the same file": "工具IDがファイル内で重複しています",
+  "assetNo already exists": "工具IDが既存データと重複しています",
   "tool name is required": "工具名は必須です",
-  "warehouse number conflicts with existing data": "既存の倉庫番号と一致しません",
-  "warehouse_no conflicts with existing value": "既存の倉庫番号と一致しません",
-  "warehouseNo is required": "倉庫番号は必須です",
-  "warehouseNo must not contain '-'": "倉庫番号に「-」は使用できません",
-  "warehouseNo conflicts in the same file": "倉庫番号の割当がファイル内で衝突しています",
-  "warehouseNo conflicts with existing warehouse": "倉庫番号が既存データと衝突しています",
+  "warehouse number conflicts with existing data": "既存の管理番号と一致しません",
+  "warehouse_no conflicts with existing value": "既存の管理番号と一致しません",
+  "warehouseNo is required": "管理番号は必須です",
+  "warehouseNo must not contain '-'": "管理番号に「-」は使用できません",
+  "warehouseNo conflicts in the same file": "管理番号の割当がファイル内で衝突しています",
+  "warehouseNo conflicts with existing warehouse": "管理番号が既存データと衝突しています",
   "internal server error": "サーバーエラーが発生しました",
 };
 
@@ -78,6 +83,26 @@ function extractRowErrors(error: unknown): RowError[] {
     }));
 }
 
+function extractMissingHeaders(error: unknown): string[] {
+  if (!isHttpError(error) || !error.body || typeof error.body !== "object") {
+    return [];
+  }
+
+  const body = error.body as {
+    error?: {
+      details?: {
+        headers?: unknown;
+      };
+    };
+  };
+  const headers = body.error?.details?.headers;
+  if (!Array.isArray(headers)) {
+    return [];
+  }
+
+  return headers.filter((item): item is string => typeof item === "string").map((item) => toJapaneseFieldLabel(item));
+}
+
 export default function AdminImportPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -85,6 +110,7 @@ export default function AdminImportPage() {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<RowError[]>([]);
+  const [missingHeaders, setMissingHeaders] = useState<string[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
   const router = useRouter();
 
@@ -103,6 +129,7 @@ export default function AdminImportPage() {
     setSubmitting(true);
     setErr(null);
     setRowErrors([]);
+    setMissingHeaders([]);
     setResult(null);
 
     const formData = new FormData();
@@ -130,6 +157,7 @@ export default function AdminImportPage() {
 
       setErr(toJapaneseMessage(getHttpErrorMessage(e)));
       setRowErrors(extractRowErrors(e));
+      setMissingHeaders(extractMissingHeaders(e));
     } finally {
       setSubmitting(false);
     }
@@ -206,8 +234,9 @@ export default function AdminImportPage() {
           </div>
 
           <div style={{ fontSize: 14, color: "#475569", lineHeight: 1.7, textAlign: "center" }}>
-            <div>・倉庫番号は必須です</div>
-            <div>・工具IDは 倉庫番号-001 形式で自動採番されます</div>
+            <div>・ヘッダー行を使う場合は「場所名 / 管理番号 / 工具ID / 工具名」で作成してください</div>
+            <div>・管理番号は必須です</div>
+            <div>・工具IDは Excel ファイル側で指定してください（必須）</div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "center" }}>
@@ -220,8 +249,8 @@ export default function AdminImportPage() {
         {result ? (
           <section className="card-surface" style={{ marginTop: 12, padding: 16, textAlign: "center" }}>
             <h2 style={{ margin: 0, fontSize: 18 }}>取込結果</h2>
-            <div style={{ marginTop: 10, fontSize: 16 }}>倉庫作成: {result.warehousesCreated}件</div>
-            <div style={{ fontSize: 16 }}>倉庫番号更新: {result.warehousesUpdated}件</div>
+            <div style={{ marginTop: 10, fontSize: 16 }}>場所作成: {result.warehousesCreated}件</div>
+            <div style={{ fontSize: 16 }}>管理番号更新: {result.warehousesUpdated}件</div>
             <div style={{ fontSize: 16 }}>工具作成: {result.toolsCreated}件</div>
           </section>
         ) : null}
@@ -229,6 +258,11 @@ export default function AdminImportPage() {
         {err ? (
           <section className="card-surface" style={{ marginTop: 12, padding: 16 }}>
             <p style={{ color: "var(--danger)", margin: 0, fontSize: 16, textAlign: "center" }}>エラー: {err}</p>
+            {missingHeaders.length > 0 ? (
+              <p style={{ marginTop: 10, marginBottom: 0, fontSize: 15, textAlign: "center" }}>
+                不足列: {missingHeaders.join(" / ")}
+              </p>
+            ) : null}
             {rowErrors.length > 0 ? (
               <ul style={{ marginTop: 10, marginBottom: 0, paddingLeft: 18, fontSize: 15 }}>
                 {rowErrors.map((item, idx) => (

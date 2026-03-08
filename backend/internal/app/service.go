@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -196,6 +195,10 @@ func normalizeDepartmentName(name string) string {
 	return strings.TrimSpace(name)
 }
 
+func normalizeUserCode(userCode string) string {
+	return strings.TrimSpace(userCode)
+}
+
 func normalizeOptionalTagID(tagID *string) *string {
 	if tagID == nil {
 		return nil
@@ -230,6 +233,7 @@ type ToolListItem struct {
 	WarehouseID                 uuid.UUID
 	WarehouseName               string
 	BaseStatus                  string
+	HasLoanHistory              bool
 	DisplayStatus               string
 	DisplayStartDate            string
 	DisplayDueDate              string
@@ -331,6 +335,7 @@ func (s *Service) listTools(ctx context.Context, currentUserID uuid.UUID, filter
 			WarehouseID:                 r.WarehouseID,
 			WarehouseName:               r.WarehouseName,
 			BaseStatus:                  r.BaseStatus,
+			HasLoanHistory:              r.HasLoanHistory,
 			DisplayStatus:               r.DisplayStatus,
 			IsBlockedByOtherReservation: r.IsBlockedByOtherReservation,
 			IsReservedByMe:              r.IsReservedByMe,
@@ -596,6 +601,62 @@ func (s *Service) DeleteDepartment(ctx context.Context, actorID, departmentID uu
 	return nil
 }
 
+type UpdateDepartmentInput struct {
+	Name *string
+}
+
+func (s *Service) UpdateDepartment(ctx context.Context, actorID, departmentID uuid.UUID, in UpdateDepartmentInput) (db.Department, error) {
+	if departmentID == uuid.Nil {
+		return db.Department{}, apierr.InvalidRequest("departmentId is required", nil)
+	}
+	if in.Name == nil {
+		return db.Department{}, apierr.InvalidRequest("name is required", nil)
+	}
+
+	trimmedName := strings.TrimSpace(*in.Name)
+	if trimmedName == "" {
+		return db.Department{}, apierr.InvalidRequest("name is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.Department{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	_, err = qtx.GetDepartmentByID(ctx, departmentID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return db.Department{}, apierr.NotFound("department not found")
+		}
+		return db.Department{}, err
+	}
+
+	updated, err := qtx.UpdateDepartmentByID(ctx, departmentID, trimmedName)
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.Department{}, mapped
+		}
+		return db.Department{}, err
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "update_department", "department", departmentID, map[string]any{
+		"name": updated.Name,
+	}); err != nil {
+		return db.Department{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.Department{}, mapped
+		}
+		return db.Department{}, err
+	}
+
+	return updated, nil
+}
+
 func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name string, warehouseNo *string) (db.Warehouse, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -694,10 +755,88 @@ func (s *Service) DeleteWarehouse(ctx context.Context, actorID, warehouseID uuid
 	return nil
 }
 
+func (s *Service) UpdateWarehouse(ctx context.Context, actorID, warehouseID uuid.UUID, in UpdateWarehouseInput) (db.Warehouse, error) {
+	if warehouseID == uuid.Nil {
+		return db.Warehouse{}, apierr.InvalidRequest("warehouseId is required", nil)
+	}
+	if in.Name == nil && in.WarehouseNo == nil {
+		return db.Warehouse{}, apierr.InvalidRequest("at least one field is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.Warehouse{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	warehouse, err := qtx.GetWarehouseByID(ctx, warehouseID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return db.Warehouse{}, apierr.NotFound("warehouse not found")
+		}
+		return db.Warehouse{}, err
+	}
+
+	name := warehouse.Name
+	if in.Name != nil {
+		trimmed := strings.TrimSpace(*in.Name)
+		if trimmed == "" {
+			return db.Warehouse{}, apierr.InvalidRequest("name cannot be empty", nil)
+		}
+		name = trimmed
+	}
+
+	warehouseNo := warehouse.WarehouseNo
+	if in.WarehouseNo != nil {
+		v := strings.TrimSpace(*in.WarehouseNo)
+		if v == "" {
+			warehouseNo = sql.NullString{}
+		} else {
+			warehouseNo = sql.NullString{String: v, Valid: true}
+		}
+	}
+
+	updated, err := qtx.UpdateWarehouse(ctx, db.UpdateWarehouseParams{
+		ID:          warehouseID,
+		Name:        name,
+		WarehouseNo: warehouseNo,
+	})
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.Warehouse{}, mapped
+		}
+		return db.Warehouse{}, err
+	}
+
+	payload := map[string]any{
+		"name": updated.Name,
+	}
+	if updated.WarehouseNo.Valid && strings.TrimSpace(updated.WarehouseNo.String) != "" {
+		payload["warehouseNo"] = updated.WarehouseNo.String
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "update_warehouse", "warehouse", warehouseID, payload); err != nil {
+		return db.Warehouse{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.Warehouse{}, mapped
+		}
+		return db.Warehouse{}, err
+	}
+
+	return updated, nil
+}
+
 func normalizeCreateToolParams(assetNo, name string, warehouseID uuid.UUID, baseStatus string, tagID *string) (db.CreateToolParams, error) {
 	assetNo = strings.TrimSpace(assetNo)
 	name = strings.TrimSpace(name)
 	baseStatus = strings.ToUpper(strings.TrimSpace(baseStatus))
+	if assetNo == "" {
+		return db.CreateToolParams{}, apierr.InvalidRequest("assetNo is required", nil)
+	}
 	if name == "" {
 		return db.CreateToolParams{}, apierr.InvalidRequest("name is required", nil)
 	}
@@ -773,6 +912,7 @@ func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, na
 }
 
 type CreateToolBulkInput struct {
+	AssetNo     string
 	Name        string
 	WarehouseID uuid.UUID
 	BaseStatus  string
@@ -793,6 +933,7 @@ type ImportExcelRow struct {
 	Row           int
 	WarehouseName string
 	WarehouseNo   string
+	AssetNo       string
 	ToolName      string
 }
 
@@ -823,15 +964,18 @@ func (s *Service) CreateToolsBulk(ctx context.Context, actorID uuid.UUID, items 
 
 	rowErrors := make([]BulkToolRowError, 0)
 	normalized := make([]db.CreateToolParams, len(items))
+	assetSeenRow := make(map[string]int)
 	tagSeenRow := make(map[string]int)
 
 	for i, item := range items {
 		row := i + 1
-		params, err := normalizeCreateToolParams("", item.Name, item.WarehouseID, item.BaseStatus, item.TagID)
+		params, err := normalizeCreateToolParams(item.AssetNo, item.Name, item.WarehouseID, item.BaseStatus, item.TagID)
 		if err != nil {
 			var apiError *apierr.APIError
 			if stdErrors.As(err, &apiError) {
 				switch {
+				case strings.Contains(apiError.Message, "assetNo"):
+					rowErrors = append(rowErrors, bulkRowError(row, "assetNo", apiError.Message))
 				case strings.Contains(apiError.Message, "name"):
 					rowErrors = append(rowErrors, bulkRowError(row, "name", apiError.Message))
 				case strings.Contains(apiError.Message, "warehouseId"):
@@ -844,6 +988,12 @@ func (s *Service) CreateToolsBulk(ctx context.Context, actorID uuid.UUID, items 
 				continue
 			}
 			return CreateToolBulkResult{}, err
+		}
+
+		if firstRow, ok := assetSeenRow[params.AssetNo]; ok {
+			rowErrors = append(rowErrors, bulkRowError(row, "assetNo", fmt.Sprintf("assetNo duplicates row %d", firstRow)))
+		} else {
+			assetSeenRow[params.AssetNo] = row
 		}
 
 		if params.TagID.Valid {
@@ -931,24 +1081,6 @@ func importExcelRowError(row int, field, message string) ImportExcelRowError {
 	}
 }
 
-const maxImportToolAssetNoRetries = 10
-
-func parseImportToolAssetSeq(assetNo, prefix string) (int, error) {
-	expectedPrefix := prefix + "-"
-	if !strings.HasPrefix(assetNo, expectedPrefix) {
-		return 0, fmt.Errorf("assetNo %q does not match prefix %q", assetNo, prefix)
-	}
-	suffix := strings.TrimPrefix(assetNo, expectedPrefix)
-	if suffix == "" {
-		return 0, fmt.Errorf("assetNo %q has empty suffix", assetNo)
-	}
-	seq, err := strconv.Atoi(suffix)
-	if err != nil || seq <= 0 {
-		return 0, fmt.Errorf("assetNo %q has invalid numeric suffix", assetNo)
-	}
-	return seq, nil
-}
-
 func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uuid.UUID, rows []ImportExcelRow) (ImportExcelResult, error) {
 	if len(rows) == 0 {
 		return ImportExcelResult{}, apierr.InvalidRequest("rows is required", nil)
@@ -958,12 +1090,14 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 	normalizedRows := make([]ImportExcelRow, 0, len(rows))
 	warehouseNoByName := make(map[string]string) // warehouseName -> warehouseNo
 	warehouseNameByNo := make(map[string]string) // warehouseNo -> warehouseName
+	assetNoSeenRow := make(map[string]int)
 
 	for _, row := range rows {
 		normalized := ImportExcelRow{
 			Row:           row.Row,
 			WarehouseName: strings.TrimSpace(row.WarehouseName),
 			WarehouseNo:   strings.TrimSpace(row.WarehouseNo),
+			AssetNo:       strings.TrimSpace(row.AssetNo),
 			ToolName:      strings.TrimSpace(row.ToolName),
 		}
 
@@ -976,8 +1110,19 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 		if strings.Contains(normalized.WarehouseNo, "-") {
 			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseNo", "warehouseNo must not contain '-'"))
 		}
+		if normalized.AssetNo == "" {
+			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "assetNo", "assetNo is required"))
+		}
 		if normalized.ToolName == "" {
 			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "toolName", "toolName is required"))
+		}
+		if normalized.AssetNo != "" {
+			key := strings.ToLower(normalized.AssetNo)
+			if firstRow, ok := assetNoSeenRow[key]; ok && firstRow != normalized.Row {
+				rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "assetNo", "assetNo duplicates in the same file"))
+			} else {
+				assetNoSeenRow[key] = normalized.Row
+			}
 		}
 		if normalized.WarehouseName != "" && normalized.WarehouseNo != "" {
 			if seen, ok := warehouseNoByName[normalized.WarehouseName]; ok && seen != normalized.WarehouseNo {
@@ -1054,7 +1199,6 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 	createdWarehouseIDs := make([]uuid.UUID, 0)
 	updatedWarehouseIDs := make([]uuid.UUID, 0)
 	createdToolIDs := make([]uuid.UUID, 0)
-	nextSeqByPrefix := make(map[string]int)
 
 	for _, row := range normalizedRows {
 		currentWarehouse, exists := warehouseByName[row.WarehouseName]
@@ -1104,74 +1248,37 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 			})
 		}
 
-		prefix := row.WarehouseNo
-		nextSeq, exists := nextSeqByPrefix[prefix]
-		if !exists {
-			maxAssetNo, maxErr := qtx.GetMaxToolAssetNoByPrefix(ctx, prefix)
-			if maxErr != nil {
-				return ImportExcelResult{}, maxErr
-			}
-			nextSeq = 1
-			if maxAssetNo.Valid {
-				trimmedMax := strings.TrimSpace(maxAssetNo.String)
-				if trimmedMax != "" {
-					maxSeq, parseErr := parseImportToolAssetSeq(trimmedMax, prefix)
-					if parseErr != nil {
-						return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
-							"rowErrors": []ImportExcelRowError{
-								importExcelRowError(row.Row, "warehouseNo", "invalid existing assetNo format"),
-							},
-						})
-					}
-					nextSeq = maxSeq + 1
+		createToolParams, normalizeErr := normalizeCreateToolParams(row.AssetNo, row.ToolName, currentWarehouse.ID, BaseStatusAvailable, nil)
+		if normalizeErr != nil {
+			var apiError *apierr.APIError
+			if stdErrors.As(normalizeErr, &apiError) {
+				field := "tool"
+				switch {
+				case strings.Contains(apiError.Message, "assetNo"):
+					field = "assetNo"
+				case strings.Contains(apiError.Message, "toolName"), strings.Contains(apiError.Message, "name"):
+					field = "toolName"
+				case strings.Contains(apiError.Message, "warehouseId"):
+					field = "warehouseName"
 				}
-			}
-			if nextSeq > 999 {
 				return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
 					"rowErrors": []ImportExcelRowError{
-						importExcelRowError(row.Row, "warehouseNo", "sequence exceeds 999"),
+						importExcelRowError(row.Row, field, apiError.Message),
 					},
 				})
 			}
+			return ImportExcelResult{}, normalizeErr
 		}
 
-		created := false
-		candidateSeq := nextSeq
-		for attempt := 0; attempt < maxImportToolAssetNoRetries; attempt++ {
-			if candidateSeq > 999 {
-				return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
-					"rowErrors": []ImportExcelRowError{
-						importExcelRowError(row.Row, "warehouseNo", "sequence exceeds 999"),
-					},
-				})
-			}
-			generatedAssetNo := fmt.Sprintf("%s-%03d", prefix, candidateSeq)
-			createToolParams, normalizeErr := normalizeCreateToolParams(generatedAssetNo, row.ToolName, currentWarehouse.ID, BaseStatusAvailable, nil)
-			if normalizeErr != nil {
-				var apiError *apierr.APIError
-				if stdErrors.As(normalizeErr, &apiError) {
-					return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
-						"rowErrors": []ImportExcelRowError{
-							importExcelRowError(row.Row, "toolName", apiError.Message),
-						},
-					})
-				}
-				return ImportExcelResult{}, normalizeErr
-			}
-
-			tool, createToolErr := qtx.CreateTool(ctx, createToolParams)
-			if createToolErr == nil {
-				result.ToolsCreated++
-				createdToolIDs = append(createdToolIDs, tool.ID)
-				nextSeqByPrefix[prefix] = candidateSeq + 1
-				created = true
-				break
-			}
-
+		tool, createToolErr := qtx.CreateTool(ctx, createToolParams)
+		if createToolErr != nil {
 			var pqErr *pq.Error
 			if stdErrors.As(createToolErr, &pqErr) && string(pqErr.Code) == "23505" && pqErr.Constraint == "tools_asset_no_key" {
-				candidateSeq++
-				continue
+				return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
+					"rowErrors": []ImportExcelRowError{
+						importExcelRowError(row.Row, "assetNo", "assetNo already exists"),
+					},
+				})
 			}
 			if mapped := mapPQError(createToolErr); mapped != nil {
 				return ImportExcelResult{}, mapped
@@ -1179,13 +1286,8 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 			return ImportExcelResult{}, createToolErr
 		}
 
-		if !created {
-			return ImportExcelResult{}, apierr.InvalidRequest("invalid import payload", map[string]any{
-				"rowErrors": []ImportExcelRowError{
-					importExcelRowError(row.Row, "warehouseNo", "assetNo retry limit exceeded"),
-				},
-			})
-		}
+		result.ToolsCreated++
+		createdToolIDs = append(createdToolIDs, tool.ID)
 	}
 
 	limitedWarehouseCreatedIDs := createdWarehouseIDs
@@ -1225,6 +1327,7 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 }
 
 type UpdateToolInput struct {
+	AssetNo     *string
 	Name        *string
 	WarehouseID *uuid.UUID
 	BaseStatus  *string
@@ -1251,13 +1354,27 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 		}
 		return db.Tool{}, err
 	}
+	if current.RetiredAt.Valid {
+		return db.Tool{}, apierr.Conflict("TOOL_RETIRED", "tool is retired", map[string]any{"toolId": toolID})
+	}
 
 	name := current.Name
+	assetNo := current.AssetNo
 	warehouseID := current.WarehouseID
 	baseStatus := current.BaseStatus
 	tagID := current.TagID
 	changedFields := make(map[string]any)
 
+	if in.AssetNo != nil {
+		trimmed := strings.TrimSpace(*in.AssetNo)
+		if trimmed == "" {
+			return db.Tool{}, apierr.InvalidRequest("assetNo cannot be empty", nil)
+		}
+		assetNo = trimmed
+		if trimmed != current.AssetNo {
+			changedFields["assetNo"] = trimmed
+		}
+	}
 	if in.Name != nil {
 		trimmed := strings.TrimSpace(*in.Name)
 		if trimmed == "" {
@@ -1309,8 +1426,9 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 		}
 	}
 
-	updated, err := qtx.UpdateTool(ctx, db.UpdateToolParams{
+	_, err = qtx.UpdateTool(ctx, db.UpdateToolParams{
 		ID:          toolID,
+		AssetNo:     assetNo,
 		Name:        name,
 		WarehouseID: warehouseID,
 		BaseStatus:  baseStatus,
@@ -1322,7 +1440,7 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 		return db.Tool{}, err
 	}
 	if in.TagIDSet {
-		updated, err = qtx.UpdateToolTag(ctx, db.UpdateToolTagParams{
+		_, err = qtx.UpdateToolTag(ctx, db.UpdateToolTagParams{
 			ID:    toolID,
 			TagID: tagID,
 		})
@@ -1347,7 +1465,15 @@ func (s *Service) UpdateTool(ctx context.Context, actorID uuid.UUID, toolID uuid
 		return db.Tool{}, err
 	}
 
-	return updated, nil
+	persisted, err := s.queries.GetToolByID(ctx, toolID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return db.Tool{}, apierr.NotFound("tool not found")
+		}
+		return db.Tool{}, err
+	}
+
+	return persisted, nil
 }
 
 func (s *Service) DeleteTool(ctx context.Context, actorID, toolID uuid.UUID) error {
@@ -1368,6 +1494,9 @@ func (s *Service) DeleteTool(ctx context.Context, actorID, toolID uuid.UUID) err
 			return apierr.NotFound("tool not found")
 		}
 		return err
+	}
+	if tool.RetiredAt.Valid {
+		return apierr.Conflict("TOOL_RETIRED", "tool is retired", map[string]any{"toolId": toolID})
 	}
 
 	loanItemCount, err := qtx.CountLoanItemsByTool(ctx, toolID)
@@ -1402,6 +1531,52 @@ func (s *Service) DeleteTool(ctx context.Context, actorID, toolID uuid.UUID) err
 	return nil
 }
 
+func (s *Service) RetireTool(ctx context.Context, actorID, toolID uuid.UUID) error {
+	if toolID == uuid.Nil {
+		return apierr.InvalidRequest("toolId is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	tool, err := qtx.GetToolForUpdate(ctx, toolID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return apierr.NotFound("tool not found")
+		}
+		return err
+	}
+	if tool.RetiredAt.Valid {
+		return nil
+	}
+
+	retired, err := qtx.RetireTool(ctx, toolID)
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return mapped
+		}
+		return err
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "retire_tool", "tool", toolID, map[string]any{
+		"assetNo":    retired.AssetNo,
+		"name":       retired.Name,
+		"retiredAt":  retired.RetiredAt.Time,
+		"warehouseId": retired.WarehouseID,
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) GetToolByTag(ctx context.Context, tagID string) (db.Tool, error) {
 	tagID = strings.TrimSpace(tagID)
 	if tagID == "" {
@@ -1420,6 +1595,7 @@ func (s *Service) GetToolByTag(ctx context.Context, tagID string) (db.Tool, erro
 
 type CreateUserInput struct {
 	Department string
+	UserCode   string
 	Username   string
 	Email      string
 	Password   string
@@ -1449,6 +1625,19 @@ type UpdateMyProfileInput struct {
 	Password   *string
 }
 
+type UpdateUserInput struct {
+	Department *string
+	UserCode   *string
+	Username   *string
+	Email      *string
+	Role       *string
+}
+
+type UpdateWarehouseInput struct {
+	Name       *string
+	WarehouseNo *string
+}
+
 type UserListFilter struct {
 	Page     int
 	PageSize int
@@ -1463,12 +1652,13 @@ type UserListResult struct {
 
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSafe, error) {
 	in.Department = normalizeDepartmentName(in.Department)
+	in.UserCode = normalizeUserCode(in.UserCode)
 	in.Username = strings.TrimSpace(in.Username)
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
 	in.Role = strings.TrimSpace(strings.ToLower(in.Role))
 
-	if in.Department == "" || in.Username == "" || in.Email == "" || in.Password == "" || in.Role == "" {
-		return db.UserSafe{}, apierr.InvalidRequest("department, username, email, password, role are required", nil)
+	if in.Department == "" || in.UserCode == "" || in.Username == "" || in.Email == "" || in.Password == "" || in.Role == "" {
+		return db.UserSafe{}, apierr.InvalidRequest("department, userCode, username, email, password, role are required", nil)
 	}
 	if !ValidateRole(in.Role) {
 		return db.UserSafe{}, apierr.InvalidRequest("invalid role", map[string]any{"role": in.Role})
@@ -1485,6 +1675,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSa
 	user, err := s.queries.CreateUser(ctx, db.CreateUserParams{
 		Role:         in.Role,
 		Department:   in.Department,
+		UserCode:     in.UserCode,
 		Username:     in.Username,
 		Email:        in.Email,
 		PasswordHash: string(hash),
@@ -1495,6 +1686,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (db.UserSa
 		}
 		return db.UserSafe{}, err
 	}
+
 	return user, nil
 }
 
@@ -1697,6 +1889,127 @@ func (s *Service) UpdateMyProfile(ctx context.Context, userID uuid.UUID, in Upda
 	return updated, nil
 }
 
+func (s *Service) UpdateUser(ctx context.Context, actorID, userID uuid.UUID, in UpdateUserInput) (db.UserSafe, error) {
+	if userID == uuid.Nil {
+		return db.UserSafe{}, apierr.InvalidRequest("userId is required", nil)
+	}
+	if in.Department == nil && in.UserCode == nil && in.Username == nil && in.Email == nil && in.Role == nil {
+		return db.UserSafe{}, apierr.InvalidRequest("at least one field is required", nil)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return db.UserSafe{}, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	current, err := qtx.GetUserByIDForUpdate(ctx, userID)
+	if err != nil {
+		if stdErrors.Is(err, sql.ErrNoRows) {
+			return db.UserSafe{}, apierr.NotFound("user not found")
+		}
+		return db.UserSafe{}, err
+	}
+	if !current.IsActive {
+		return db.UserSafe{}, apierr.NotFound("user not found")
+	}
+
+	department := current.Department
+	if in.Department != nil {
+		trimmed := normalizeDepartmentName(*in.Department)
+		if trimmed == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("department cannot be empty", nil)
+		}
+		if err := s.ensureDepartmentExists(ctx, trimmed); err != nil {
+			return db.UserSafe{}, err
+		}
+		department = trimmed
+	}
+
+	userCode := current.UserCode
+	if in.UserCode != nil {
+		trimmed := normalizeUserCode(*in.UserCode)
+		if trimmed == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("userCode cannot be empty", nil)
+		}
+		userCode = trimmed
+	}
+
+	username := current.Username
+	if in.Username != nil {
+		trimmed := strings.TrimSpace(*in.Username)
+		if trimmed == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("username cannot be empty", nil)
+		}
+		username = trimmed
+	}
+
+	email := current.Email
+	if in.Email != nil {
+		trimmed := strings.TrimSpace(strings.ToLower(*in.Email))
+		if trimmed == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("email cannot be empty", nil)
+		}
+		email = trimmed
+	}
+
+	role := current.Role
+	if in.Role != nil {
+		trimmed := strings.TrimSpace(strings.ToLower(*in.Role))
+		if trimmed == "" {
+			return db.UserSafe{}, apierr.InvalidRequest("role cannot be empty", nil)
+		}
+		if !ValidateRole(trimmed) {
+			return db.UserSafe{}, apierr.InvalidRequest("invalid role", map[string]any{"role": trimmed})
+		}
+		role = trimmed
+	}
+
+	if current.Role == RoleAdmin && role != RoleAdmin {
+		activeAdmins, err := qtx.CountActiveAdmins(ctx)
+		if err != nil {
+			return db.UserSafe{}, err
+		}
+		if activeAdmins <= 1 {
+			return db.UserSafe{}, apierr.Conflict("LAST_ADMIN", "cannot demote the last active admin", nil)
+		}
+	}
+
+	updated, err := qtx.UpdateUser(ctx, db.UpdateUserParams{
+		ID:         userID,
+		Department: department,
+		UserCode:   userCode,
+		Username:   username,
+		Email:      email,
+		Role:       role,
+	})
+	if err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.UserSafe{}, mapped
+		}
+		return db.UserSafe{}, err
+	}
+
+	if err := s.auditTx(ctx, qtx, &actorID, "update_user", "user", userID, map[string]any{
+		"department": updated.Department,
+		"userCode":   updated.UserCode,
+		"username":   updated.Username,
+		"email":      updated.Email,
+		"role":       updated.Role,
+	}); err != nil {
+		return db.UserSafe{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		if mapped := mapPQError(err); mapped != nil {
+			return db.UserSafe{}, mapped
+		}
+		return db.UserSafe{}, err
+	}
+	return updated, nil
+}
+
 func (s *Service) CreateSignupRequest(ctx context.Context, in SignupRequestInput) (SignupRequestItem, error) {
 	in.Department = normalizeDepartmentName(in.Department)
 	in.Username = strings.TrimSpace(in.Username)
@@ -1792,6 +2105,7 @@ func (s *Service) ApproveSignupRequest(ctx context.Context, adminID, requestID u
 	user, err := qtx.CreateUser(ctx, db.CreateUserParams{
 		Role:         RoleUser,
 		Department:   req.Department,
+		UserCode:     req.Username,
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: req.PasswordHash,
@@ -1814,6 +2128,7 @@ func (s *Service) ApproveSignupRequest(ctx context.Context, adminID, requestID u
 	if err := s.auditTx(ctx, qtx, &adminID, "approve_signup_request", "signup_request", requestID, map[string]any{
 		"approvedUserId": user.ID,
 		"department":     user.Department,
+		"userCode":       user.UserCode,
 		"username":       user.Username,
 		"email":          user.Email,
 	}); err != nil {
@@ -1929,6 +2244,9 @@ func (s *Service) CreateLoanBox(ctx context.Context, borrowerID uuid.UUID, in Cr
 				return CreateLoanBoxResult{}, apierr.InvalidRequest("tool not found", map[string]any{"toolId": toolID.String()})
 			}
 			return CreateLoanBoxResult{}, err
+		}
+		if tool.RetiredAt.Valid {
+			return CreateLoanBoxResult{}, apierr.Conflict("TOOL_RETIRED", "tool is retired", map[string]any{"toolId": toolID.String()})
 		}
 		if tool.BaseStatus != BaseStatusAvailable {
 			return CreateLoanBoxResult{}, apierr.Conflict("TOOL_NOT_AVAILABLE", "tool base_status must be AVAILABLE", map[string]any{"toolId": toolID.String(), "baseStatus": tool.BaseStatus})
@@ -2331,6 +2649,7 @@ func (s *Service) EnsureSeedAdmin(ctx context.Context) error {
 
 	_, err = s.CreateUser(ctx, CreateUserInput{
 		Department: seedDepartment,
+		UserCode:   s.cfg.SeedAdminUsername,
 		Username:   s.cfg.SeedAdminUsername,
 		Email:      s.cfg.SeedAdminEmail,
 		Password:   s.cfg.SeedAdminPassword,
@@ -2451,6 +2770,8 @@ func mapPQError(err error) error {
 			return apierr.Conflict("TOOL_TAG_DUPLICATE", "tagId already exists", nil)
 		case "users_username_key":
 			return apierr.Conflict("USERNAME_DUPLICATE", "username already exists", nil)
+		case "users_user_code_key":
+			return apierr.Conflict("USER_CODE_DUPLICATE", "userCode already exists", nil)
 		case "users_email_key":
 			return apierr.Conflict("EMAIL_DUPLICATE", "email already exists", nil)
 		case "idx_user_signup_requests_username_pending":
@@ -2467,6 +2788,9 @@ func mapPQError(err error) error {
 	case "23514":
 		if pqErr.Constraint == "loan_boxes_due_date_check" || pqErr.Constraint == "loan_items_due_date_check" {
 			return apierr.Conflict("INVALID_DATE_RANGE", "due_date must be equal to or after start_date", nil)
+		}
+		if pqErr.Constraint == "users_user_code_not_blank" {
+			return apierr.InvalidRequest("userCode cannot be empty", nil)
 		}
 		return apierr.InvalidRequest("check constraint violation", map[string]any{"constraint": pqErr.Constraint})
 	default:

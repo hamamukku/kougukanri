@@ -197,46 +197,58 @@ export default function AdminReturnsPage() {
                   </Button>
                 </div>
 
-                <Table>
-                  <thead>
-                    <tr>
-                      <Th>選択</Th>
-                      <Th>工具名</Th>
-                      <Th>工具ID</Th>
-                      <Th>開始日</Th>
-                      <Th>返却期日</Th>
-                      <Th>申請日時</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.items.map((item) => {
-                      const checked = selected.has(item.loanItemId);
-                      return (
-                        <tr key={`${group.boxId}:${item.loanItemId}`}>
-                          <Td>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={isBusy}
-                              onChange={(e) => toggleLoanItem(group.boxId, item.loanItemId, e.target.checked)}
-                              style={checkboxStyle}
-                            />
-                          </Td>
-                          <Td>{item.toolName}</Td>
-                          <Td>{item.assetNo}</Td>
-                          <Td>{item.startDate}</Td>
-                          <Td>{item.dueDate}</Td>
-                          <Td>{formatDateJa(item.returnRequestedAt)}</Td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </Table>
+                <div className="admin-returns-table">
+                  <Table>
+                    <thead>
+                      <tr>
+                        <Th>選択</Th>
+                        <Th>工具名</Th>
+                        <Th>工具ID</Th>
+                        <Th>開始日</Th>
+                        <Th>返却期日</Th>
+                        <Th>申請日時</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map((item) => {
+                        const checked = selected.has(item.loanItemId);
+                        return (
+                          <tr key={`${group.boxId}:${item.loanItemId}`}>
+                            <Td>
+                              <div style={{ display: "flex", justifyContent: "center" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={isBusy}
+                                  onChange={(e) => toggleLoanItem(group.boxId, item.loanItemId, e.target.checked)}
+                                  style={checkboxStyle}
+                                />
+                              </div>
+                            </Td>
+                            <Td>{item.toolName}</Td>
+                            <Td>{item.assetNo}</Td>
+                            <Td>{item.startDate}</Td>
+                            <Td>{item.dueDate}</Td>
+                            <Td>{formatDateJa(item.returnRequestedAt)}</Td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
+                </div>
               </section>
             );
           })}
         </>
       )}
+
+      <style jsx>{`
+        .admin-returns-table :global(th),
+        .admin-returns-table :global(td) {
+          text-align: center !important;
+          vertical-align: middle;
+        }
+      `}</style>
     </main>
   );
 }

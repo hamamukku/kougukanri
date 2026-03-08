@@ -46,6 +46,14 @@ type LoanBoxResponse = {
   }>;
 };
 
+const dateFieldLabelStyle: React.CSSProperties = {
+  fontSize: 16,
+  fontWeight: 700,
+  marginBottom: 6,
+  textAlign: "center",
+  lineHeight: 1.2,
+};
+
 // yyyy/mm/dd を「年/月/日」に見せる（中身は type="date" のまま・カレンダー維持）
 function DateInputJa(props: { value: string; onChange: (value: string) => void; min?: string; max?: string }) {
   const [focused, setFocused] = useState(false);
@@ -328,7 +336,7 @@ export default function LoanBoxPage() {
         onCancel={() => setConfirmOpen(false)}
       />
 
-      <h1>貸出ボックス</h1>
+      <h1 style={{ fontSize: 28, margin: "0 0 12px" }}>貸出ボックス</h1>
 
       <div className="card-surface" style={{ marginTop: 12, padding: 12 }}>
         <div
@@ -340,11 +348,11 @@ export default function LoanBoxPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: 12, marginBottom: 4 }}>開始日</div>
+            <div style={dateFieldLabelStyle}>開始日</div>
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </div>
           <div>
-            <div style={{ fontSize: 12, marginBottom: 4 }}>返却期日</div>
+            <div style={dateFieldLabelStyle}>返却期日</div>
             <Input type="date" value={dueDate} min={startDate} onChange={(e) => setDueDate(e.target.value)} />
           </div>
           <div>
@@ -377,13 +385,13 @@ export default function LoanBoxPage() {
         <p style={{ marginTop: 12 }}>選択された工具がありません。</p>
       ) : (
         <>
-          <div className="desktop-table">
+          <div className="desktop-table loan-box-table">
             <Table>
               <thead>
                 <tr>
                   <Th>工具名</Th>
                   <Th>工具ID</Th>
-                  <Th>倉庫</Th>
+                  <Th>場所</Th>
                   <Th>状態</Th>
                   <Th>期限上書き</Th>
                 </tr>
@@ -395,15 +403,19 @@ export default function LoanBoxPage() {
                     <Td>{tool.assetNo}</Td>
                     <Td>{warehouseNameById.get(tool.warehouseId) ?? tool.warehouseName ?? "不明"}</Td>
                     <Td>
-                      <StatusBadge status={tool.status} />
+                      <div style={{ display: "flex", justifyContent: "center" }}>
+                        <StatusBadge status={tool.status} />
+                      </div>
                     </Td>
                     <Td>
-                      <DateInputJa
-                        min={startDate}
-                        max={dueDate}
-                        value={dueOverrides[tool.id] || ""}
-                        onChange={(value) => setDueOverrides((prev) => ({ ...prev, [tool.id]: value }))}
-                      />
+                      <div style={{ width: 180, margin: "0 auto" }}>
+                        <DateInputJa
+                          min={startDate}
+                          max={dueDate}
+                          value={dueOverrides[tool.id] || ""}
+                          onChange={(value) => setDueOverrides((prev) => ({ ...prev, [tool.id]: value }))}
+                        />
+                      </div>
                     </Td>
                   </tr>
                 ))}
@@ -420,7 +432,7 @@ export default function LoanBoxPage() {
                 </div>
                 <div style={{ marginTop: 8, fontSize: 13 }}>工具ID: {tool.assetNo}</div>
                 <div style={{ marginTop: 4, fontSize: 13 }}>
-                  倉庫: {warehouseNameById.get(tool.warehouseId) ?? tool.warehouseName ?? "不明"}
+                  場所: {warehouseNameById.get(tool.warehouseId) ?? tool.warehouseName ?? "不明"}
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>期限上書き</div>
@@ -436,6 +448,14 @@ export default function LoanBoxPage() {
           </div>
         </>
       )}
+
+      <style jsx>{`
+        .loan-box-table :global(th),
+        .loan-box-table :global(td) {
+          text-align: center !important;
+          vertical-align: middle;
+        }
+      `}</style>
     </main>
   );
 }

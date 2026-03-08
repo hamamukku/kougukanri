@@ -8,7 +8,7 @@ INSERT INTO tools (
     created_at,
     updated_at
 ) VALUES (
-    COALESCE(NULLIF($1, ''), 'T-' || LPAD(nextval('tool_asset_no_seq')::text, 6, '0')),
+    $1,
     $2,
     $3,
     $4,
@@ -16,39 +16,48 @@ INSERT INTO tools (
     NOW(),
     NOW()
 )
-RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at;
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at;
 
 -- name: GetToolByID :one
-SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 FROM tools
 WHERE id = $1;
 
 -- name: GetToolForUpdate :one
-SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 FROM tools
 WHERE id = $1
 FOR UPDATE;
 
 -- name: UpdateTool :one
 UPDATE tools
-SET name = $2,
-    warehouse_id = $3,
-    base_status = $4,
+SET asset_no = $2,
+    name = $3,
+    warehouse_id = $4,
+    base_status = $5,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at;
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at;
 
 -- name: UpdateToolTag :one
 UPDATE tools
 SET tag_id = $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at;
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at;
+
+-- name: RetireTool :one
+UPDATE tools
+SET retired_at = NOW(),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at;
 
 -- name: GetToolByTag :one
-SELECT id, asset_no, tag_id, name, warehouse_id, base_status, created_at, updated_at
+SELECT id, asset_no, tag_id, name, warehouse_id, base_status, retired_at, created_at, updated_at
 FROM tools
-WHERE tag_id = $1;
+WHERE tag_id = $1
+  AND retired_at IS NULL;
 
 -- name: CountToolsWithDisplay :one
 WITH tool_state AS (
@@ -59,6 +68,11 @@ WITH tool_state AS (
         t.warehouse_id,
         w.name AS warehouse_name,
         t.base_status,
+        EXISTS (
+            SELECT 1
+            FROM loan_items li_history
+            WHERE li_history.tool_id = t.id
+        ) AS has_loan_history,
         loan.start_date AS loan_start_date,
         loan.due_date AS loan_due_date,
         reserve.start_date AS reserved_start_date,
@@ -85,6 +99,8 @@ WITH tool_state AS (
         LIMIT 1
     ) AS reserve ON TRUE
     WHERE
+        t.retired_at IS NULL
+        AND
         (NULLIF($2::text, '') IS NULL OR t.warehouse_id = NULLIF($2::text, '')::uuid)
         AND (
             $3::text = ''
@@ -121,6 +137,11 @@ WITH tool_state AS (
         t.warehouse_id,
         w.name AS warehouse_name,
         t.base_status,
+        EXISTS (
+            SELECT 1
+            FROM loan_items li_history
+            WHERE li_history.tool_id = t.id
+        ) AS has_loan_history,
         loan.start_date AS loan_start_date,
         loan.due_date AS loan_due_date,
         reserve.start_date AS reserved_start_date,
@@ -147,6 +168,8 @@ WITH tool_state AS (
         LIMIT 1
     ) AS reserve ON TRUE
     WHERE
+        t.retired_at IS NULL
+        AND
         (NULLIF($2::text, '') IS NULL OR t.warehouse_id = NULLIF($2::text, '')::uuid)
         AND (
             $3::text = ''
@@ -165,6 +188,7 @@ SELECT
     warehouse_id,
     warehouse_name,
     base_status,
+    has_loan_history,
     CASE
         WHEN base_status = 'BROKEN' THEN 'BROKEN'
         WHEN base_status = 'REPAIR' THEN 'REPAIR'

@@ -151,7 +151,7 @@ export default function MyLoansPage() {
                 <h2 style={{ marginBottom: 4 }}>{group.boxDisplayName}</h2>
               </div>
 
-              <div className="desktop-table">
+              <div className="desktop-table my-loans-table">
                 <Table>
                   <thead>
                     <tr>
@@ -174,9 +174,12 @@ export default function MyLoansPage() {
                           <Td>{item.startDate}</Td>
                           <Td>{item.dueDate}</Td>
                           <Td>
-                            <StatusBadge status={item.status} />
+                            <div style={{ display: "flex", justifyContent: "center" }}>
+                              <StatusBadge status={item.status} />
+                            </div>
                           </Td>
                           <Td>
+                            <div style={{ display: "flex", justifyContent: "center" }}>
                             {requested ? (
                               <span>申請済み ({formatDateJa(item.returnRequestedAt ?? "")})</span>
                             ) : (
@@ -184,6 +187,7 @@ export default function MyLoansPage() {
                                 {busy ? "申請中..." : "返却申請"}
                               </Button>
                             )}
+                            </div>
                           </Td>
                         </tr>
                       );
@@ -222,6 +226,14 @@ export default function MyLoansPage() {
           ))}
         </>
       )}
+
+      <style jsx>{`
+        .my-loans-table :global(th),
+        .my-loans-table :global(td) {
+          text-align: center !important;
+          vertical-align: middle;
+        }
+      `}</style>
     </main>
   );
 }

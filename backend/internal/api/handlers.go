@@ -54,14 +54,17 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	admin.Use(AuthMiddleware(h.jwtManager, h.svc), RequireRole(app.RoleAdmin))
 	admin.POST("/warehouses", h.createWarehouse)
 	admin.DELETE("/warehouses/:warehouseId", h.deleteWarehouse)
+	admin.PATCH("/warehouses/:warehouseId", h.patchWarehouse)
 	admin.GET("/tools", h.listAdminTools)
 	admin.GET("/audit-logs", h.listAuditLogs)
 	admin.POST("/tools", h.createTool)
 	admin.POST("/tools/bulk", h.createToolsBulk)
 	admin.POST("/import/excel", h.importWarehousesToolsExcel)
 	admin.DELETE("/tools/:toolId", h.deleteTool)
+	admin.POST("/tools/:toolId/retire", h.retireTool)
 	admin.PATCH("/tools/:toolId", h.patchTool)
 	admin.POST("/departments", h.createDepartment)
+	admin.PATCH("/departments/:departmentId", h.patchDepartment)
 	admin.DELETE("/departments/:departmentId", h.deleteDepartment)
 	admin.GET("/returns/requests", h.listReturnRequests)
 	admin.POST("/returns/approve-box", h.approveReturnBox)
@@ -69,6 +72,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	admin.GET("/users", h.listUsers)
 	admin.POST("/users", h.createUser)
 	admin.DELETE("/users/:userId", h.deleteUser)
+	admin.PATCH("/users/:userId", h.patchUser)
 	admin.GET("/user-requests", h.listSignupRequests)
 	admin.POST("/user-requests/:requestId/approve", h.approveSignupRequest)
 }
@@ -159,6 +163,7 @@ func (h *Handler) getMyProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":         profile.ID,
 		"department": profile.Department,
+		"userCode":   profile.UserCode,
 		"username":   profile.Username,
 		"email":      profile.Email,
 		"role":       profile.Role,
@@ -195,6 +200,7 @@ func (h *Handler) patchMyProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":         profile.ID,
 		"department": profile.Department,
+		"userCode":   profile.UserCode,
 		"username":   profile.Username,
 		"email":      profile.Email,
 		"role":       profile.Role,
@@ -261,6 +267,41 @@ func (h *Handler) createWarehouse(c *gin.Context) {
 	})
 }
 
+type patchWarehouseRequest struct {
+	Name       *string `json:"name"`
+	WarehouseNo *string `json:"warehouseNo"`
+}
+
+func (h *Handler) patchWarehouse(c *gin.Context) {
+	admin, _ := CurrentUser(c)
+	warehouseID, err := uuid.Parse(strings.TrimSpace(c.Param("warehouseId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("warehouseId is invalid", nil))
+		return
+	}
+
+	var req patchWarehouseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
+		return
+	}
+
+	warehouse, err := h.svc.UpdateWarehouse(c.Request.Context(), admin.ID, warehouseID, app.UpdateWarehouseInput{
+		Name:       req.Name,
+		WarehouseNo: req.WarehouseNo,
+	})
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":          warehouse.ID,
+		"name":        warehouse.Name,
+		"warehouseNo": nullableNullString(warehouse.WarehouseNo),
+	})
+}
+
 func (h *Handler) deleteWarehouse(c *gin.Context) {
 	user, _ := CurrentUser(c)
 	warehouseID, err := uuid.Parse(strings.TrimSpace(c.Param("warehouseId")))
@@ -294,6 +335,38 @@ func (h *Handler) createDepartment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
+		"id":   department.ID,
+		"name": department.Name,
+	})
+}
+
+type patchDepartmentRequest struct {
+	Name *string `json:"name"`
+}
+
+func (h *Handler) patchDepartment(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	departmentID, err := uuid.Parse(strings.TrimSpace(c.Param("departmentId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("departmentId is invalid", nil))
+		return
+	}
+
+	var req patchDepartmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
+		return
+	}
+
+	department, err := h.svc.UpdateDepartment(c.Request.Context(), user.ID, departmentID, app.UpdateDepartmentInput{
+		Name: req.Name,
+	})
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
 		"id":   department.ID,
 		"name": department.Name,
 	})
@@ -341,6 +414,7 @@ func (h *Handler) listTools(c *gin.Context) {
 	for _, t := range result.Items {
 		resp = append(resp, gin.H{
 			"id":                          t.ID,
+			"toolId":                      t.AssetNo,
 			"assetNo":                     t.AssetNo,
 			"name":                        t.Name,
 			"warehouseId":                 t.WarehouseID,
@@ -389,11 +463,13 @@ func (h *Handler) listAdminTools(c *gin.Context) {
 	for _, t := range result.Items {
 		resp = append(resp, gin.H{
 			"id":                          t.ID,
+			"toolId":                      t.AssetNo,
 			"assetNo":                     t.AssetNo,
 			"name":                        t.Name,
 			"warehouseId":                 t.WarehouseID,
 			"warehouseName":               t.WarehouseName,
 			"baseStatus":                  t.BaseStatus,
+			"hasLoanHistory":              t.HasLoanHistory,
 			"status":                      t.DisplayStatus,
 			"startDate":                   nullableString(t.DisplayStartDate),
 			"dueDate":                     nullableString(t.DisplayDueDate),
@@ -499,6 +575,7 @@ func (h *Handler) createTool(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, gin.H{
 		"id":          tool.ID,
+		"toolId":      tool.AssetNo,
 		"assetNo":     tool.AssetNo,
 		"tagId":       nullableNullString(tool.TagID),
 		"name":        tool.Name,
@@ -508,6 +585,7 @@ func (h *Handler) createTool(c *gin.Context) {
 }
 
 type createToolBulkItemRequest struct {
+	AssetNo     string  `json:"assetNo"`
 	Name        string  `json:"name"`
 	WarehouseID string  `json:"warehouseId"`
 	BaseStatus  string  `json:"baseStatus"`
@@ -535,6 +613,7 @@ func (h *Handler) createToolsBulk(c *gin.Context) {
 	inputs := make([]app.CreateToolBulkInput, len(req.Tools))
 	for i, item := range req.Tools {
 		inputs[i] = app.CreateToolBulkInput{
+			AssetNo:    item.AssetNo,
 			Name:       item.Name,
 			BaseStatus: item.BaseStatus,
 			TagID:      item.TagID,
@@ -567,6 +646,7 @@ func (h *Handler) createToolsBulk(c *gin.Context) {
 	for _, tool := range result.Tools {
 		respItems = append(respItems, gin.H{
 			"id":          tool.ID,
+			"toolId":      tool.AssetNo,
 			"assetNo":     tool.AssetNo,
 			"tagId":       nullableNullString(tool.TagID),
 			"name":        tool.Name,
@@ -595,25 +675,31 @@ func getExcelCellValue(row []string, index int) string {
 type importExcelColumnIndexes struct {
 	WarehouseName int
 	WarehouseNo   int
+	AssetNo       int
 	ToolName      int
 	HasHeader     bool
 }
 
 func detectImportExcelColumnIndexes(firstRow []string) importExcelColumnIndexes {
 	indexes := importExcelColumnIndexes{
-		WarehouseName: 0,
-		WarehouseNo:   1,
-		ToolName:      2,
+		WarehouseName: -1,
+		WarehouseNo:   -1,
+		AssetNo:       -1,
+		ToolName:      -1,
 		HasHeader:     false,
 	}
 
 	for i, cell := range firstRow {
-		switch normalizeImportExcelHeader(cell) {
-		case "倉庫名", "warehousename":
+		normalized := normalizeImportExcelHeader(cell)
+		switch normalized {
+		case "場所名", "倉庫名", "warehousename":
 			indexes.WarehouseName = i
 			indexes.HasHeader = true
-		case "倉庫番号", "warehouseno":
+		case "管理番号", "倉庫番号", "warehouseno":
 			indexes.WarehouseNo = i
+			indexes.HasHeader = true
+		case "工具id", "toolid", "assetno":
+			indexes.AssetNo = i
 			indexes.HasHeader = true
 		case "工具名", "toolname":
 			indexes.ToolName = i
@@ -621,15 +707,45 @@ func detectImportExcelColumnIndexes(firstRow []string) importExcelColumnIndexes 
 		}
 	}
 
+	if !indexes.HasHeader {
+		indexes.WarehouseName = 0
+		indexes.WarehouseNo = 1
+		indexes.AssetNo = 2
+		indexes.ToolName = 3
+	}
+
 	return indexes
 }
 
-func parseImportExcelRows(rows [][]string) []app.ImportExcelRow {
+func missingImportExcelRequiredHeaders(indexes importExcelColumnIndexes) []string {
+	missing := make([]string, 0, 4)
+	if indexes.WarehouseName < 0 {
+		missing = append(missing, "場所名")
+	}
+	if indexes.WarehouseNo < 0 {
+		missing = append(missing, "管理番号")
+	}
+	if indexes.AssetNo < 0 {
+		missing = append(missing, "工具ID")
+	}
+	if indexes.ToolName < 0 {
+		missing = append(missing, "工具名")
+	}
+	return missing
+}
+
+func parseImportExcelRows(rows [][]string) ([]app.ImportExcelRow, []string) {
 	if len(rows) == 0 {
-		return []app.ImportExcelRow{}
+		return []app.ImportExcelRow{}, nil
 	}
 
 	indexes := detectImportExcelColumnIndexes(rows[0])
+	if indexes.HasHeader {
+		missingHeaders := missingImportExcelRequiredHeaders(indexes)
+		if len(missingHeaders) > 0 {
+			return nil, missingHeaders
+		}
+	}
 	startIndex := 0
 	if indexes.HasHeader {
 		startIndex = 1
@@ -640,9 +756,10 @@ func parseImportExcelRows(rows [][]string) []app.ImportExcelRow {
 		row := rows[i]
 		warehouseName := getExcelCellValue(row, indexes.WarehouseName)
 		warehouseNo := getExcelCellValue(row, indexes.WarehouseNo)
+		assetNo := getExcelCellValue(row, indexes.AssetNo)
 		toolName := getExcelCellValue(row, indexes.ToolName)
 
-		if warehouseName == "" && warehouseNo == "" && toolName == "" {
+		if warehouseName == "" && warehouseNo == "" && assetNo == "" && toolName == "" {
 			continue
 		}
 
@@ -650,11 +767,12 @@ func parseImportExcelRows(rows [][]string) []app.ImportExcelRow {
 			Row:           i + 1,
 			WarehouseName: warehouseName,
 			WarehouseNo:   warehouseNo,
+			AssetNo:       assetNo,
 			ToolName:      toolName,
 		})
 	}
 
-	return result
+	return result, nil
 }
 
 func (h *Handler) importWarehousesToolsExcel(c *gin.Context) {
@@ -698,7 +816,13 @@ func (h *Handler) importWarehousesToolsExcel(c *gin.Context) {
 		WriteError(c, apierr.InvalidRequest("sheet is invalid", map[string]any{"sheet": sheetName}))
 		return
 	}
-	rows := parseImportExcelRows(rawRows)
+	rows, missingHeaders := parseImportExcelRows(rawRows)
+	if len(missingHeaders) > 0 {
+		WriteError(c, apierr.InvalidRequest("required headers are missing", map[string]any{
+			"headers": missingHeaders,
+		}))
+		return
+	}
 	if len(rows) == 0 {
 		WriteError(c, apierr.InvalidRequest("no import rows found", nil))
 		return
@@ -731,6 +855,20 @@ func (h *Handler) deleteTool(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (h *Handler) retireTool(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	toolID, err := uuid.Parse(strings.TrimSpace(c.Param("toolId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("toolId is invalid", nil))
+		return
+	}
+	if err := h.svc.RetireTool(c.Request.Context(), user.ID, toolID); err != nil {
+		WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 type optionalString struct {
 	Set   bool
 	Value *string
@@ -752,9 +890,12 @@ func (o *optionalString) UnmarshalJSON(data []byte) error {
 }
 
 type patchToolRequest struct {
+	ToolID      *string        `json:"toolId"`
+	AssetNo     *string        `json:"assetNo"`
 	Name        *string        `json:"name"`
 	WarehouseID *string        `json:"warehouseId"`
 	BaseStatus  *string        `json:"baseStatus"`
+	Retired     *bool          `json:"retired"`
 	TagID       optionalString `json:"tagId"`
 }
 
@@ -781,7 +922,30 @@ func (h *Handler) patchTool(c *gin.Context) {
 		warehouseID = &parsed
 	}
 
+	if req.Retired != nil && *req.Retired {
+		if err := h.svc.RetireTool(c.Request.Context(), user.ID, toolID); err != nil {
+			WriteError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"id":      toolID,
+			"retired": true,
+		})
+		return
+	}
+
+	assetNo := req.AssetNo
+		if req.ToolID != nil {
+			if assetNo == nil {
+				assetNo = req.ToolID
+			} else if strings.TrimSpace(*assetNo) != strings.TrimSpace(*req.ToolID) {
+				WriteError(c, apierr.InvalidRequest("assetNo and toolId do not match", nil))
+				return
+			}
+		}
+
 	tool, err := h.svc.UpdateTool(c.Request.Context(), user.ID, toolID, app.UpdateToolInput{
+		AssetNo:     assetNo,
 		Name:        req.Name,
 		WarehouseID: warehouseID,
 		BaseStatus:  req.BaseStatus,
@@ -794,6 +958,7 @@ func (h *Handler) patchTool(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"id":          tool.ID,
+		"toolId":      tool.AssetNo,
 		"assetNo":     tool.AssetNo,
 		"tagId":       nullableNullString(tool.TagID),
 		"name":        tool.Name,
@@ -1037,10 +1202,19 @@ func (h *Handler) approveReturnItems(c *gin.Context) {
 
 type createUserRequest struct {
 	Department string `json:"department"`
+	UserCode   string `json:"userCode"`
 	Username   string `json:"username"`
 	Email      string `json:"email"`
 	Password   string `json:"password"`
 	Role       string `json:"role"`
+}
+
+type patchUserRequest struct {
+	Department *string `json:"department"`
+	UserCode   *string `json:"userCode"`
+	Username   *string `json:"username"`
+	Email      *string `json:"email"`
+	Role       *string `json:"role"`
 }
 
 func (h *Handler) listUsers(c *gin.Context) {
@@ -1063,6 +1237,7 @@ func (h *Handler) listUsers(c *gin.Context) {
 		resp = append(resp, gin.H{
 			"id":         user.ID,
 			"department": user.Department,
+			"userCode":   user.UserCode,
 			"username":   user.Username,
 			"email":      user.Email,
 			"role":       user.Role,
@@ -1086,6 +1261,7 @@ func (h *Handler) createUser(c *gin.Context) {
 	}
 	user, err := h.svc.CreateUser(c.Request.Context(), app.CreateUserInput{
 		Department: req.Department,
+		UserCode:   req.UserCode,
 		Username:   req.Username,
 		Email:      req.Email,
 		Password:   req.Password,
@@ -1098,6 +1274,7 @@ func (h *Handler) createUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"id":         user.ID,
 		"department": user.Department,
+		"userCode":   user.UserCode,
 		"username":   user.Username,
 		"email":      user.Email,
 		"role":       user.Role,
@@ -1118,6 +1295,41 @@ func (h *Handler) deleteUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) patchUser(c *gin.Context) {
+	admin, _ := CurrentUser(c)
+	userID, err := uuid.Parse(strings.TrimSpace(c.Param("userId")))
+	if err != nil {
+		WriteError(c, apierr.InvalidRequest("userId is invalid", nil))
+		return
+	}
+	var req patchUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
+		return
+	}
+
+	updated, err := h.svc.UpdateUser(c.Request.Context(), admin.ID, userID, app.UpdateUserInput{
+		Department: req.Department,
+		UserCode:   req.UserCode,
+		Username:   req.Username,
+		Email:      req.Email,
+		Role:       req.Role,
+	})
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         updated.ID,
+		"department": updated.Department,
+		"userCode":   updated.UserCode,
+		"username":   updated.Username,
+		"email":      updated.Email,
+		"role":       updated.Role,
+	})
 }
 
 func (h *Handler) listSignupRequests(c *gin.Context) {
@@ -1160,6 +1372,7 @@ func (h *Handler) approveSignupRequest(c *gin.Context) {
 		"user": gin.H{
 			"id":         user.ID,
 			"department": user.Department,
+			"userCode":   user.UserCode,
 			"username":   user.Username,
 			"email":      user.Email,
 			"role":       user.Role,

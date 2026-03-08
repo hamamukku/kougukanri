@@ -9,6 +9,7 @@ import (
 type CreateUserParams struct {
 	Role         string
 	Department   string
+	UserCode     string
 	Username     string
 	Email        string
 	PasswordHash string
@@ -18,6 +19,7 @@ const createUserQuery = `
 INSERT INTO users (
     role,
     department,
+    user_code,
     username,
     email,
     password_hash,
@@ -30,17 +32,19 @@ INSERT INTO users (
     $3,
     $4,
     $5,
+    $6,
     TRUE,
     NOW(),
     NOW()
 )
-RETURNING id, role, department, username, email, is_active, created_at, updated_at
+RETURNING id, role, department, user_code, username, email, is_active, created_at, updated_at
 `
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (UserSafe, error) {
 	row := q.db.QueryRowContext(ctx, createUserQuery,
 		arg.Role,
 		arg.Department,
+		arg.UserCode,
 		arg.Username,
 		arg.Email,
 		arg.PasswordHash,
@@ -50,6 +54,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (UserSaf
 		&i.ID,
 		&i.Role,
 		&i.Department,
+		&i.UserCode,
 		&i.Username,
 		&i.Email,
 		&i.IsActive,
@@ -60,7 +65,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (UserSaf
 }
 
 const getUserByLoginIDQuery = `
-SELECT id, role, department, username, email, password_hash, is_active
+SELECT id, role, department, user_code, username, email, password_hash, is_active
 FROM users
 WHERE email = $1 OR username = $1
 LIMIT 1
@@ -73,6 +78,7 @@ func (q *Queries) GetUserByLoginID(ctx context.Context, loginID string) (User, e
 		&i.ID,
 		&i.Role,
 		&i.Department,
+		&i.UserCode,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -82,7 +88,7 @@ func (q *Queries) GetUserByLoginID(ctx context.Context, loginID string) (User, e
 }
 
 const getUserByIDQuery = `
-SELECT id, role, department, username, email, is_active
+SELECT id, role, department, user_code, username, email, is_active
 FROM users
 WHERE id = $1
 `
@@ -94,6 +100,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (UserSafe, erro
 		&i.ID,
 		&i.Role,
 		&i.Department,
+		&i.UserCode,
 		&i.Username,
 		&i.Email,
 		&i.IsActive,
@@ -102,7 +109,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (UserSafe, erro
 }
 
 const getUserByIDForUpdateQuery = `
-SELECT id, role, department, username, email, password_hash, is_active, created_at, updated_at
+SELECT id, role, department, user_code, username, email, password_hash, is_active, created_at, updated_at
 FROM users
 WHERE id = $1
 FOR UPDATE
@@ -115,6 +122,7 @@ func (q *Queries) GetUserByIDForUpdate(ctx context.Context, id uuid.UUID) (User,
 		&i.ID,
 		&i.Role,
 		&i.Department,
+		&i.UserCode,
 		&i.Username,
 		&i.Email,
 		&i.PasswordHash,
@@ -142,7 +150,7 @@ SET
     password_hash = $5,
     updated_at = NOW()
 WHERE id = $1 AND is_active = TRUE
-RETURNING id, role, department, username, email, is_active, created_at, updated_at
+RETURNING id, role, department, user_code, username, email, is_active, created_at, updated_at
 `
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (UserSafe, error) {
@@ -158,6 +166,53 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.ID,
 		&i.Role,
 		&i.Department,
+		&i.UserCode,
+		&i.Username,
+		&i.Email,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+type UpdateUserParams struct {
+	ID         uuid.UUID
+	Department string
+	UserCode   string
+	Username   string
+	Email      string
+	Role       string
+}
+
+const updateUserQuery = `
+UPDATE users
+SET
+    department = $2,
+    user_code = $3,
+    username = $4,
+    email = $5,
+    role = $6,
+    updated_at = NOW()
+WHERE id = $1 AND is_active = TRUE
+RETURNING id, role, department, user_code, username, email, is_active, created_at, updated_at
+`
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UserSafe, error) {
+	row := q.db.QueryRowContext(ctx, updateUserQuery,
+		arg.ID,
+		arg.Department,
+		arg.UserCode,
+		arg.Username,
+		arg.Email,
+		arg.Role,
+	)
+	var i UserSafe
+	err := row.Scan(
+		&i.ID,
+		&i.Role,
+		&i.Department,
+		&i.UserCode,
 		&i.Username,
 		&i.Email,
 		&i.IsActive,
@@ -168,7 +223,7 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 }
 
 const listActiveUsersQuery = `
-SELECT id, role, department, username, email, is_active, created_at, updated_at
+SELECT id, role, department, user_code, username, email, is_active, created_at, updated_at
 FROM users
 WHERE is_active = TRUE
 ORDER BY created_at DESC, id DESC
@@ -188,6 +243,7 @@ func (q *Queries) ListActiveUsers(ctx context.Context) ([]UserSafe, error) {
 			&i.ID,
 			&i.Role,
 			&i.Department,
+			&i.UserCode,
 			&i.Username,
 			&i.Email,
 			&i.IsActive,
@@ -207,7 +263,7 @@ type ListActiveUsersPageParams struct {
 }
 
 const listActiveUsersPageQuery = `
-SELECT id, role, department, username, email, is_active, created_at, updated_at
+SELECT id, role, department, user_code, username, email, is_active, created_at, updated_at
 FROM users
 WHERE is_active = TRUE
 ORDER BY created_at DESC, id DESC
@@ -228,6 +284,7 @@ func (q *Queries) ListActiveUsersPage(ctx context.Context, arg ListActiveUsersPa
 			&i.ID,
 			&i.Role,
 			&i.Department,
+			&i.UserCode,
 			&i.Username,
 			&i.Email,
 			&i.IsActive,

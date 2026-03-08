@@ -3,7 +3,6 @@ import LogoutButton from "./logout-button";
 import { LoanBoxProvider } from "../../src/state/loanBoxStore";
 import SideNav from "./side-nav";
 import AuthMeSync from "./auth-me-sync";
-import LoanBoxFab from "./loan-box-fab";
 
 const AUTH_ROLE_COOKIE = "role";
 const AUTH_USERNAME_COOKIE = "username";
@@ -70,7 +69,6 @@ export default async function AppShellLayout({
             {children}
           </main>
         </div>
-        <LoanBoxFab />
       </LoanBoxProvider>
     </div>
   );

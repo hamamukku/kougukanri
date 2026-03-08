@@ -24,7 +24,7 @@ export default function SideNav({ role }: Props) {
     { href: "/admin/returns", label: "返却承認" },
     { href: "/admin/tools", label: "工具管理" },
     { href: "/admin/users", label: "ユーザー・部署管理" },
-    { href: "/admin/warehouses", label: "倉庫管理" },
+    { href: "/admin/warehouses", label: "場所管理" },
     { href: "/admin/import", label: "Excel取込" },
   ];
 

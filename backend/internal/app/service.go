@@ -225,6 +225,17 @@ func normalizeOptionalTagID(tagID *string) *string {
 	return &trimmed
 }
 
+func normalizeNullableSQLString(value *string) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: trimmed, Valid: true}
+}
+
 func normalizeMode(mode string) string {
 	if strings.EqualFold(mode, "exact") {
 		return "exact"
@@ -672,18 +683,13 @@ func (s *Service) UpdateDepartment(ctx context.Context, actorID, departmentID uu
 	return updated, nil
 }
 
-func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name string, warehouseNo *string) (db.Warehouse, error) {
+func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name string, address, warehouseNo *string) (db.Warehouse, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return db.Warehouse{}, apierr.InvalidRequest("name is required", nil)
 	}
-	normalizedWarehouseNo := sql.NullString{}
-	if warehouseNo != nil {
-		v := strings.TrimSpace(*warehouseNo)
-		if v != "" {
-			normalizedWarehouseNo = sql.NullString{String: v, Valid: true}
-		}
-	}
+	normalizedAddress := normalizeNullableSQLString(address)
+	normalizedWarehouseNo := normalizeNullableSQLString(warehouseNo)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -692,7 +698,7 @@ func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name s
 	defer tx.Rollback()
 	qtx := s.queries.WithTx(tx)
 
-	warehouse, err := qtx.CreateWarehouse(ctx, name, normalizedWarehouseNo)
+	warehouse, err := qtx.CreateWarehouse(ctx, name, normalizedAddress, normalizedWarehouseNo)
 	if err != nil {
 		if mapped := mapPQError(err); mapped != nil {
 			return db.Warehouse{}, mapped
@@ -700,12 +706,17 @@ func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name s
 		return db.Warehouse{}, err
 	}
 
+	var addressPayload any
+	if warehouse.Address.Valid && strings.TrimSpace(warehouse.Address.String) != "" {
+		addressPayload = warehouse.Address.String
+	}
 	var warehouseNoPayload any
 	if warehouse.WarehouseNo.Valid && strings.TrimSpace(warehouse.WarehouseNo.String) != "" {
 		warehouseNoPayload = warehouse.WarehouseNo.String
 	}
 
 	if err := s.auditTx(ctx, qtx, &actorID, "create_warehouse", "warehouse", warehouse.ID, map[string]any{
+		"address":     addressPayload,
 		"name":        warehouse.Name,
 		"warehouseNo": warehouseNoPayload,
 	}); err != nil {
@@ -774,7 +785,7 @@ func (s *Service) UpdateWarehouse(ctx context.Context, actorID, warehouseID uuid
 	if warehouseID == uuid.Nil {
 		return db.Warehouse{}, apierr.InvalidRequest("warehouseId is required", nil)
 	}
-	if in.Name == nil && in.WarehouseNo == nil {
+	if in.Name == nil && in.Address == nil && in.WarehouseNo == nil {
 		return db.Warehouse{}, apierr.InvalidRequest("at least one field is required", nil)
 	}
 
@@ -802,19 +813,20 @@ func (s *Service) UpdateWarehouse(ctx context.Context, actorID, warehouseID uuid
 		name = trimmed
 	}
 
+	address := warehouse.Address
+	if in.Address != nil {
+		address = normalizeNullableSQLString(in.Address)
+	}
+
 	warehouseNo := warehouse.WarehouseNo
 	if in.WarehouseNo != nil {
-		v := strings.TrimSpace(*in.WarehouseNo)
-		if v == "" {
-			warehouseNo = sql.NullString{}
-		} else {
-			warehouseNo = sql.NullString{String: v, Valid: true}
-		}
+		warehouseNo = normalizeNullableSQLString(in.WarehouseNo)
 	}
 
 	updated, err := qtx.UpdateWarehouse(ctx, db.UpdateWarehouseParams{
 		ID:          warehouseID,
 		Name:        name,
+		Address:     address,
 		WarehouseNo: warehouseNo,
 	})
 	if err != nil {
@@ -826,6 +838,9 @@ func (s *Service) UpdateWarehouse(ctx context.Context, actorID, warehouseID uuid
 
 	payload := map[string]any{
 		"name": updated.Name,
+	}
+	if updated.Address.Valid && strings.TrimSpace(updated.Address.String) != "" {
+		payload["address"] = updated.Address.String
 	}
 	if updated.WarehouseNo.Valid && strings.TrimSpace(updated.WarehouseNo.String) != "" {
 		payload["warehouseNo"] = updated.WarehouseNo.String
@@ -904,6 +919,13 @@ func (s *Service) nextToolAssetNo(ctx context.Context, qtx *db.Queries, warehous
 		return "", err
 	}
 
+	warehouseNo := strings.TrimSpace(warehouse.WarehouseNo.String)
+	if !warehouse.WarehouseNo.Valid || warehouseNo == "" {
+		return "", apierr.InvalidRequest("warehouseNo is required for assetNo generation", map[string]any{
+			"warehouseId": warehouseID,
+		})
+	}
+
 	maxSeq := 0
 	for _, assetNo := range assetNos {
 		if seq, ok := extractToolAssetSequence(assetNo); ok && seq > maxSeq {
@@ -911,7 +933,7 @@ func (s *Service) nextToolAssetNo(ctx context.Context, qtx *db.Queries, warehous
 		}
 	}
 
-	return fmt.Sprintf("%s-%03d", strings.TrimSpace(warehouse.Name), maxSeq+1), nil
+	return fmt.Sprintf("%s-%03d", warehouseNo, maxSeq+1), nil
 }
 
 func (s *Service) CreateTool(ctx context.Context, actorID uuid.UUID, assetNo, name string, warehouseID uuid.UUID, baseStatus string) (db.Tool, error) {
@@ -1087,6 +1109,14 @@ func (s *Service) CreateToolsBulk(ctx context.Context, actorID uuid.UUID, items 
 	for i, params := range normalized {
 		params.AssetNo, err = s.nextToolAssetNo(ctx, qtx, params.WarehouseID)
 		if err != nil {
+			var apiError *apierr.APIError
+			if stdErrors.As(err, &apiError) {
+				return CreateToolBulkResult{}, apierr.InvalidRequest("invalid tools payload", map[string]any{
+					"rowErrors": []BulkToolRowError{
+						bulkRowError(i+1, "warehouseId", apiError.Message),
+					},
+				})
+			}
 			return CreateToolBulkResult{}, err
 		}
 		tool, err := qtx.CreateTool(ctx, params)
@@ -1211,7 +1241,7 @@ func (s *Service) ImportWarehousesToolsFromExcel(ctx context.Context, actorID uu
 	for _, row := range normalizedRows {
 		currentWarehouse, exists := warehouseByName[row.WarehouseName]
 		if !exists {
-			createdWarehouse, createErr := qtx.CreateWarehouse(ctx, row.WarehouseName, sql.NullString{})
+			createdWarehouse, createErr := qtx.CreateWarehouse(ctx, row.WarehouseName, sql.NullString{}, sql.NullString{})
 			if createErr != nil {
 				var pqErr *pq.Error
 				if stdErrors.As(createErr, &pqErr) && string(pqErr.Code) == "23505" && pqErr.Constraint == "warehouses_name_key" {
@@ -1628,6 +1658,7 @@ type UpdateUserInput struct {
 
 type UpdateWarehouseInput struct {
 	Name       *string
+	Address    *string
 	WarehouseNo *string
 }
 

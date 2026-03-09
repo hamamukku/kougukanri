@@ -1,4 +1,3 @@
-// frontend/app/(app)/admin/warehouses/page.tsx
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -11,7 +10,14 @@ import { clearAuthSession } from "../../../../src/utils/auth";
 type Warehouse = {
   id: string;
   name: string;
+  address?: string | null;
   warehouseNo?: string | null;
+};
+
+type EditingWarehouseDraft = {
+  name: string;
+  address: string;
+  warehouseNo: string;
 };
 
 function ConfirmModal(props: {
@@ -90,14 +96,14 @@ export default function AdminWarehousesPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
   const [warehouseNo, setWarehouseNo] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingDraft, setEditingDraft] = useState<{ name: string; warehouseNo: string } | null>(null);
+  const [editingDraft, setEditingDraft] = useState<EditingWarehouseDraft | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
-
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<Warehouse | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -123,7 +129,7 @@ export default function AdminWarehousesPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const data = await apiFetchJson<Warehouse[]>("/api/warehouses");
+      const data = await apiFetchJson<Warehouse[]>("/api/admin/warehouses");
       setWarehouses(data);
       setErr(null);
     } catch (e: unknown) {
@@ -140,18 +146,21 @@ export default function AdminWarehousesPage() {
 
   const onAdd = async () => {
     if (!name.trim() || submitting) return;
-    setSubmitting(true);
 
+    setSubmitting(true);
+    setErr(null);
     try {
-      await apiFetchJson<{ id: string; name: string; warehouseNo?: string | null }>("/api/admin/warehouses", {
+      await apiFetchJson<Warehouse>("/api/admin/warehouses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
+          address: address.trim() || undefined,
           warehouseNo: warehouseNo.trim() || undefined,
         }),
       });
       setName("");
+      setAddress("");
       setWarehouseNo("");
       await loadData();
     } catch (e: unknown) {
@@ -185,6 +194,7 @@ export default function AdminWarehousesPage() {
     setEditingId(warehouse.id);
     setEditingDraft({
       name: warehouse.name,
+      address: warehouse.address ?? "",
       warehouseNo: warehouse.warehouseNo ?? "",
     });
   };
@@ -198,7 +208,6 @@ export default function AdminWarehousesPage() {
     if (editingId !== warehouse.id || !editingDraft || savingId || deletingId || submitting) return;
 
     const editedName = editingDraft.name.trim();
-    const editedNo = editingDraft.warehouseNo.trim();
     if (!editedName) {
       setErr("必須項目を入力してください。");
       return;
@@ -207,17 +216,15 @@ export default function AdminWarehousesPage() {
     setSavingId(warehouse.id);
     setErr(null);
     try {
-      await apiFetchJson<{ id: string; name: string; warehouseNo: string | null }>(
-        `/api/admin/warehouses/${warehouse.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: editedName,
-            warehouseNo: editedNo,
-          }),
-        },
-      );
+      await apiFetchJson<Warehouse>(`/api/admin/warehouses/${warehouse.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editedName,
+          address: editingDraft.address.trim(),
+          warehouseNo: editingDraft.warehouseNo.trim(),
+        }),
+      });
       cancelEditing();
       await loadData();
     } catch (e: unknown) {
@@ -252,7 +259,6 @@ export default function AdminWarehousesPage() {
     }
   };
 
-  // ラベル大きく + 中央寄せ（入力欄の中央に合わせる）
   const labelStyle: React.CSSProperties = {
     fontSize: 16,
     fontWeight: 700,
@@ -261,13 +267,11 @@ export default function AdminWarehousesPage() {
     lineHeight: 1.2,
   };
 
-  // 入力欄も他ページと揃える（高さ・文字サイズ）
   const inputStyle: React.CSSProperties = {
     fontSize: 16,
     padding: "12px 12px",
   };
 
-  // ✅ ボタンは「大きいけど横に伸びない」
   const buttonStyle: React.CSSProperties = {
     width: "auto",
     minWidth: 140,
@@ -279,6 +283,15 @@ export default function AdminWarehousesPage() {
     alignItems: "center",
     justifyContent: "center",
     textAlign: "center",
+  };
+
+  const addressCellStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: 360,
+    margin: "0 auto",
+    whiteSpace: "normal",
+    wordBreak: "break-word",
+    lineHeight: 1.5,
   };
 
   if (loading) return <main>loading...</main>;
@@ -293,21 +306,15 @@ export default function AdminWarehousesPage() {
     <main className="admin-warehouses-page">
       <h1>場所管理</h1>
 
-      <div
-        className="card-surface"
-        style={{
-          marginTop: 12,
-          display: "grid",
-          gap: 12,
-          alignItems: "end",
-          marginBottom: 12,
-          padding: 12,
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        }}
-      >
+      <div className="card-surface warehouses-form" style={{ marginTop: 12, marginBottom: 12, padding: 12 }}>
         <div>
           <div style={labelStyle}>場所名</div>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="場所名" style={inputStyle} />
+        </div>
+
+        <div>
+          <div style={labelStyle}>住所</div>
+          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="住所" style={inputStyle} />
         </div>
 
         <div>
@@ -320,7 +327,7 @@ export default function AdminWarehousesPage() {
           />
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-start" }}>
+        <div className="warehouses-form-button">
           <Button type="button" onClick={onAdd} disabled={submitting} style={buttonStyle}>
             {submitting ? "登録中..." : "登録"}
           </Button>
@@ -330,28 +337,40 @@ export default function AdminWarehousesPage() {
       <table className="card-surface admin-warehouses-table" style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0 8px 12px" }}>場所名</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>管理番号</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "8px 0" }}>操作</th>
+            <th>場所名</th>
+            <th>住所</th>
+            <th>管理番号</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
           {warehouses.map((warehouse) => (
             <tr key={warehouse.id}>
-              <td style={{ padding: "8px 0 8px 12px" }}>
+              <td>
                 {editingId === warehouse.id ? (
                   <Input
                     value={editingDraft?.name ?? ""}
-                    onChange={(e) =>
-                      setEditingDraft((prev) => (prev ? { ...prev, name: e.target.value } : prev))
-                    }
+                    onChange={(e) => setEditingDraft((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
                     style={inputStyle}
                   />
                 ) : (
                   warehouse.name
                 )}
               </td>
-              <td style={{ padding: "8px 0" }}>
+              <td>
+                {editingId === warehouse.id ? (
+                  <Input
+                    value={editingDraft?.address ?? ""}
+                    onChange={(e) => setEditingDraft((prev) => (prev ? { ...prev, address: e.target.value } : prev))}
+                    style={inputStyle}
+                  />
+                ) : warehouse.address && warehouse.address.trim() ? (
+                  <div style={addressCellStyle}>{warehouse.address}</div>
+                ) : (
+                  "未設定"
+                )}
+              </td>
+              <td>
                 {editingId === warehouse.id ? (
                   <Input
                     value={editingDraft?.warehouseNo ?? ""}
@@ -366,7 +385,7 @@ export default function AdminWarehousesPage() {
                   "未設定"
                 )}
               </td>
-              <td style={{ padding: "8px 0" }}>
+              <td>
                 {editingId === warehouse.id ? (
                   <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
                     <Button
@@ -408,20 +427,31 @@ export default function AdminWarehousesPage() {
       <ConfirmModal
         open={confirmOpen}
         title="削除の確認"
-        message={
-          confirmTarget ? `場所「${confirmTarget.name}」を削除します。よろしいですか？` : ""
-        }
+        message={confirmTarget ? `場所「${confirmTarget.name}」を削除します。よろしいですか？` : ""}
         okText="削除する"
         cancelText="キャンセル"
         busy={confirmBusy}
         onCancel={closeDeleteConfirm}
         onOk={() => void onConfirmDelete()}
       />
+
       <style jsx>{`
         .admin-warehouses-page > h1 {
           font-size: 28px;
           line-height: 1.2;
           margin: 0 0 12px;
+        }
+
+        .warehouses-form {
+          display: grid;
+          gap: 12px;
+          align-items: end;
+          grid-template-columns: minmax(180px, 1fr) minmax(260px, 1.4fr) minmax(200px, 1fr) auto;
+        }
+
+        .warehouses-form-button {
+          display: flex;
+          justify-content: flex-start;
         }
 
         .admin-warehouses-table {
@@ -441,6 +471,12 @@ export default function AdminWarehousesPage() {
         .admin-warehouses-table th {
           background: #f8fafc !important;
           font-weight: 700 !important;
+        }
+
+        @media (max-width: 960px) {
+          .warehouses-form {
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          }
         }
       `}</style>
     </main>

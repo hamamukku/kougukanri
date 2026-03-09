@@ -7,6 +7,7 @@ type DisplayStatus = "AVAILABLE" | "LOANED" | "RESERVED" | "BROKEN" | "REPAIR";
 type Warehouse = {
   id: string;
   name: string;
+  address?: string | null;
   warehouseNo?: string | null;
 };
 
@@ -67,8 +68,8 @@ let nextLoanItemNo = 1;
 let nextAuditNo = 1;
 
 let warehouses: Warehouse[] = [
-  { id: "w1", name: "Main Warehouse", warehouseNo: "WH-001" },
-  { id: "w2", name: "Sub Warehouse", warehouseNo: null },
+  { id: "w1", name: "Main Warehouse", address: "東京都千代田区1-1-1", warehouseNo: "WH-001" },
+  { id: "w2", name: "Sub Warehouse", address: null, warehouseNo: null },
 ];
 
 let tools: Tool[] = [
@@ -279,7 +280,10 @@ function extractToolAssetSequence(assetNo: string) {
 
 function nextToolAssetNo(warehouseID: string, sourceTools: Tool[], excludeToolID?: string) {
   const warehouse = warehouses.find((item) => item.id === warehouseID);
-  if (!warehouse) return "";
+  if (!warehouse) return { assetNo: "", error: "warehouseId is invalid" };
+  if (!warehouse.warehouseNo || !warehouse.warehouseNo.trim()) {
+    return { assetNo: "", error: "warehouseNo is required for assetNo generation" };
+  }
 
   const maxSeq = sourceTools.reduce((max, tool) => {
     if (tool.warehouseId !== warehouseID || tool.id === excludeToolID) return max;
@@ -287,7 +291,10 @@ function nextToolAssetNo(warehouseID: string, sourceTools: Tool[], excludeToolID
     return seq !== null && seq > max ? seq : max;
   }, 0);
 
-  return `${warehouse.name}-${String(maxSeq + 1).padStart(3, "0")}`;
+  return {
+    assetNo: `${warehouse.warehouseNo.trim()}-${String(maxSeq + 1).padStart(3, "0")}`,
+    error: null,
+  };
 }
 
 export const handlers = [
@@ -350,6 +357,12 @@ export const handlers = [
 
   http.get("/api/warehouses", ({ request }) => {
     const auth = authenticate(request);
+    if ("error" in auth) return auth.error;
+    return HttpResponse.json(warehouses);
+  }),
+
+  http.get("/api/admin/warehouses", ({ request }) => {
+    const auth = authenticate(request, "admin");
     if ("error" in auth) return auth.error;
     return HttpResponse.json(warehouses);
   }),
@@ -610,9 +623,14 @@ export const handlers = [
       return errorResponse(400, "INVALID_REQUEST", "warehouseId is invalid");
     }
 
+    const nextAssetNo = nextToolAssetNo(warehouseID, tools);
+    if (nextAssetNo.error) {
+      return errorResponse(400, "INVALID_REQUEST", nextAssetNo.error);
+    }
+
     const tool: Tool = {
       id: `t-${nextToolNo++}`,
-      assetNo: nextToolAssetNo(warehouseID, tools),
+      assetNo: nextAssetNo.assetNo,
       name,
       warehouseId: warehouseID,
       baseStatus,
@@ -670,9 +688,14 @@ export const handlers = [
         rowErrors.push({ row, field: "warehouseId", message: "warehouseId is invalid" });
       }
 
+      const nextAssetNo = nextToolAssetNo(warehouseID, [...tools, ...nextTools]);
+      if (nextAssetNo.error) {
+        rowErrors.push({ row, field: "warehouseId", message: nextAssetNo.error });
+      }
+
       nextTools.push({
         id: `t-${nextToolNo + index}`,
-        assetNo: nextToolAssetNo(warehouseID, [...tools, ...nextTools]),
+        assetNo: nextAssetNo.assetNo,
         name,
         warehouseId: warehouseID,
         baseStatus,
@@ -788,10 +811,14 @@ export const handlers = [
     }
 
     const current = tools[index];
-    const nextGeneratedAssetNo =
-      nextWarehouseID !== undefined && nextWarehouseID !== current.warehouseId
-        ? nextToolAssetNo(nextWarehouseID, tools, toolID)
-        : current.assetNo;
+    let nextGeneratedAssetNo = current.assetNo;
+    if (nextWarehouseID !== undefined && nextWarehouseID !== current.warehouseId) {
+      const nextAssetNo = nextToolAssetNo(nextWarehouseID, tools, toolID);
+      if (nextAssetNo.error) {
+        return errorResponse(400, "INVALID_REQUEST", nextAssetNo.error);
+      }
+      nextGeneratedAssetNo = nextAssetNo.assetNo;
+    }
     const updated: Tool = {
       ...current,
       assetNo: nextGeneratedAssetNo,
@@ -830,16 +857,87 @@ export const handlers = [
 
     const obj = readBody(body);
     const name = typeof obj.name === "string" ? obj.name.trim() : "";
+    const address = typeof obj.address === "string" ? obj.address.trim() : "";
     const warehouseNo = typeof obj.warehouseNo === "string" ? obj.warehouseNo.trim() : "";
     if (!name) {
       return errorResponse(400, "INVALID_REQUEST", "name is required");
     }
+    if (warehouses.some((warehouse) => warehouse.name === name)) {
+      return errorResponse(409, "WAREHOUSE_NAME_DUPLICATE", "warehouse name already exists");
+    }
 
-    const warehouse = { id: `w-${nextWarehouseNo++}`, name, warehouseNo: warehouseNo || null };
+    const warehouse = { id: `w-${nextWarehouseNo++}`, name, address: address || null, warehouseNo: warehouseNo || null };
     warehouses = [warehouse, ...warehouses];
 
     addAuditLog("create_warehouse", "warehouse", warehouse.id, auth.user.id, warehouse);
     return HttpResponse.json(warehouse, { status: 201 });
+  }),
+
+  http.patch("/api/admin/warehouses/:warehouseId", async ({ request, params }) => {
+    const auth = authenticate(request, "admin");
+    if ("error" in auth) return auth.error;
+
+    const warehouseID = String(params.warehouseId ?? "").trim();
+    const index = warehouses.findIndex((warehouse) => warehouse.id === warehouseID);
+    if (index < 0) {
+      return errorResponse(404, "NOT_FOUND", "warehouse not found");
+    }
+
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse(400, "INVALID_REQUEST", "invalid request body");
+    }
+
+    const obj = readBody(body);
+    const nextName = typeof obj.name === "string" ? obj.name.trim() : undefined;
+    const nextAddress = typeof obj.address === "string" ? obj.address.trim() : undefined;
+    const nextWarehouseNo = typeof obj.warehouseNo === "string" ? obj.warehouseNo.trim() : undefined;
+
+    if (nextName === undefined && nextAddress === undefined && nextWarehouseNo === undefined) {
+      return errorResponse(400, "INVALID_REQUEST", "at least one field is required");
+    }
+    if (nextName !== undefined && !nextName) {
+      return errorResponse(400, "INVALID_REQUEST", "name cannot be empty");
+    }
+    if (
+      nextName !== undefined &&
+      warehouses.some((warehouse, currentIndex) => currentIndex !== index && warehouse.name === nextName)
+    ) {
+      return errorResponse(409, "WAREHOUSE_NAME_DUPLICATE", "warehouse name already exists");
+    }
+
+    const current = warehouses[index];
+    const updated: Warehouse = {
+      ...current,
+      ...(nextName !== undefined ? { name: nextName } : {}),
+      ...(nextAddress !== undefined ? { address: nextAddress || null } : {}),
+      ...(nextWarehouseNo !== undefined ? { warehouseNo: nextWarehouseNo || null } : {}),
+    };
+
+    warehouses[index] = updated;
+    addAuditLog("update_warehouse", "warehouse", updated.id, auth.user.id, { before: current, after: updated });
+
+    return HttpResponse.json(updated);
+  }),
+
+  http.delete("/api/admin/warehouses/:warehouseId", ({ request, params }) => {
+    const auth = authenticate(request, "admin");
+    if ("error" in auth) return auth.error;
+
+    const warehouseID = String(params.warehouseId ?? "").trim();
+    const warehouse = warehouses.find((item) => item.id === warehouseID);
+    if (!warehouse) {
+      return errorResponse(404, "NOT_FOUND", "warehouse not found");
+    }
+    if (tools.some((tool) => tool.warehouseId === warehouseID)) {
+      return errorResponse(409, "WAREHOUSE_NOT_EMPTY", "cannot delete warehouse that has tools");
+    }
+
+    warehouses = warehouses.filter((item) => item.id !== warehouseID);
+    addAuditLog("delete_warehouse", "warehouse", warehouseID, auth.user.id, warehouse);
+    return HttpResponse.json({ ok: true });
   }),
 
   http.get("/api/admin/returns/requests", ({ request }) => {

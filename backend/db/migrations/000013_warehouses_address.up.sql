@@ -1,0 +1,2 @@
+ALTER TABLE warehouses
+ADD COLUMN address TEXT NULL;

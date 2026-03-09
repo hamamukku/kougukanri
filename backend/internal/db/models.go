@@ -55,6 +55,7 @@ type SignupRequest struct {
 type Warehouse struct {
 	ID          uuid.UUID
 	Name        string
+	Address     sql.NullString
 	WarehouseNo sql.NullString
 	CreatedAt   time.Time
 	UpdatedAt   time.Time

@@ -52,6 +52,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 
 	admin := apiGroup.Group("/admin")
 	admin.Use(AuthMiddleware(h.jwtManager, h.svc), RequireRole(app.RoleAdmin))
+	admin.GET("/warehouses", h.listWarehouses)
 	admin.POST("/warehouses", h.createWarehouse)
 	admin.DELETE("/warehouses/:warehouseId", h.deleteWarehouse)
 	admin.PATCH("/warehouses/:warehouseId", h.patchWarehouse)
@@ -218,6 +219,7 @@ func (h *Handler) listWarehouses(c *gin.Context) {
 	resp := make([]gin.H, 0, len(items))
 	for _, w := range items {
 		resp = append(resp, gin.H{
+			"address":     nullableNullString(w.Address),
 			"id":          w.ID,
 			"name":        w.Name,
 			"warehouseNo": nullableNullString(w.WarehouseNo),
@@ -245,6 +247,7 @@ func (h *Handler) listDepartments(c *gin.Context) {
 
 type createWarehouseRequest struct {
 	Name        string  `json:"name"`
+	Address     *string `json:"address"`
 	WarehouseNo *string `json:"warehouseNo"`
 }
 
@@ -255,12 +258,13 @@ func (h *Handler) createWarehouse(c *gin.Context) {
 		WriteError(c, apierr.InvalidRequest("invalid request body", nil))
 		return
 	}
-	item, err := h.svc.CreateWarehouse(c.Request.Context(), user.ID, req.Name, req.WarehouseNo)
+	item, err := h.svc.CreateWarehouse(c.Request.Context(), user.ID, req.Name, req.Address, req.WarehouseNo)
 	if err != nil {
 		WriteError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
+		"address":     nullableNullString(item.Address),
 		"id":          item.ID,
 		"name":        item.Name,
 		"warehouseNo": nullableNullString(item.WarehouseNo),
@@ -268,7 +272,8 @@ func (h *Handler) createWarehouse(c *gin.Context) {
 }
 
 type patchWarehouseRequest struct {
-	Name       *string `json:"name"`
+	Name        *string `json:"name"`
+	Address     *string `json:"address"`
 	WarehouseNo *string `json:"warehouseNo"`
 }
 
@@ -287,7 +292,8 @@ func (h *Handler) patchWarehouse(c *gin.Context) {
 	}
 
 	warehouse, err := h.svc.UpdateWarehouse(c.Request.Context(), admin.ID, warehouseID, app.UpdateWarehouseInput{
-		Name:       req.Name,
+		Name:        req.Name,
+		Address:     req.Address,
 		WarehouseNo: req.WarehouseNo,
 	})
 	if err != nil {
@@ -296,6 +302,7 @@ func (h *Handler) patchWarehouse(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"address":     nullableNullString(warehouse.Address),
 		"id":          warehouse.ID,
 		"name":        warehouse.Name,
 		"warehouseNo": nullableNullString(warehouse.WarehouseNo),

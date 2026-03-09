@@ -297,6 +297,542 @@ function nextToolAssetNo(warehouseID: string, sourceTools: Tool[], excludeToolID
   };
 }
 
+type ImportFileRow = {
+  row: number;
+  placeName: string;
+  address: string;
+  warehouseNo: string;
+  toolName: string;
+};
+
+function normalizeImportHeader(value: string) {
+  return value.trim().replace(/\uFEFF/g, "").replace(/[ _-]/g, "").replace(/　/g, "").toLowerCase();
+}
+
+function getImportCellValue(row: string[], index: number) {
+  if (index < 0 || index >= row.length) return "";
+  return row[index]?.trim() ?? "";
+}
+
+function detectImportColumnIndexes(firstRow: string[]) {
+  const indexes = {
+    placeName: -1,
+    address: -1,
+    warehouseNo: -1,
+    toolName: -1,
+    hasHeader: false,
+  };
+
+  for (const [index, cell] of firstRow.entries()) {
+    const normalized = normalizeImportHeader(cell);
+    switch (normalized) {
+      case "場所名":
+      case "場所":
+      case "倉庫名":
+      case "place":
+      case "placename":
+      case "warehouse":
+      case "warehousename":
+        indexes.placeName = index;
+        indexes.hasHeader = true;
+        break;
+      case "住所":
+      case "address":
+        indexes.address = index;
+        indexes.hasHeader = true;
+        break;
+      case "管理番号":
+      case "倉庫番号":
+      case "warehouseno":
+        indexes.warehouseNo = index;
+        indexes.hasHeader = true;
+        break;
+      case "工具名":
+      case "toolname":
+        indexes.toolName = index;
+        indexes.hasHeader = true;
+        break;
+      case "工具id":
+      case "toolid":
+      case "assetno":
+      case "状態":
+      case "status":
+      case "basestatus":
+        indexes.hasHeader = true;
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (!indexes.hasHeader) {
+    indexes.placeName = 0;
+    indexes.address = 1;
+    indexes.warehouseNo = 2;
+    indexes.toolName = 3;
+  }
+
+  return indexes;
+}
+
+function missingImportHeaders(indexes: ReturnType<typeof detectImportColumnIndexes>) {
+  const missing: string[] = [];
+  if (indexes.placeName < 0) missing.push("場所名");
+  if (indexes.address < 0) missing.push("住所");
+  if (indexes.warehouseNo < 0) missing.push("管理番号");
+  if (indexes.toolName < 0) missing.push("工具名");
+  return missing;
+}
+
+function parseImportRows(table: string[][]) {
+  if (table.length === 0) {
+    return { rows: [] as ImportFileRow[], missingHeaders: [] as string[] };
+  }
+
+  const indexes = detectImportColumnIndexes(table[0]);
+  if (indexes.hasHeader) {
+    const missingHeaders = missingImportHeaders(indexes);
+    if (missingHeaders.length > 0) {
+      return { rows: [] as ImportFileRow[], missingHeaders };
+    }
+  }
+
+  const rows: ImportFileRow[] = [];
+  const startIndex = indexes.hasHeader ? 1 : 0;
+  for (let i = startIndex; i < table.length; i += 1) {
+    const row = table[i];
+    const placeName = getImportCellValue(row, indexes.placeName);
+    const address = getImportCellValue(row, indexes.address);
+    const warehouseNo = getImportCellValue(row, indexes.warehouseNo);
+    const toolName = getImportCellValue(row, indexes.toolName);
+
+    if (!placeName && !address && !warehouseNo && !toolName) {
+      continue;
+    }
+
+    rows.push({
+      row: i + 1,
+      placeName,
+      address,
+      warehouseNo,
+      toolName,
+    });
+  }
+
+  return { rows, missingHeaders: [] as string[] };
+}
+
+function parseCsvText(text: string) {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        currentCell += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && char === ",") {
+      currentRow.push(currentCell);
+      currentCell = "";
+      continue;
+    }
+    if (!inQuotes && (char === "\n" || char === "\r")) {
+      if (char === "\r" && text[i + 1] === "\n") {
+        i += 1;
+      }
+      currentRow.push(currentCell);
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = "";
+      continue;
+    }
+    currentCell += char;
+  }
+
+  currentRow.push(currentCell);
+  rows.push(currentRow);
+  return rows;
+}
+
+const ZIP_END_OF_CENTRAL_DIRECTORY = 0x06054b50;
+const ZIP_CENTRAL_DIRECTORY = 0x02014b50;
+const ZIP_LOCAL_FILE_HEADER = 0x04034b50;
+
+function readUint16LE(bytes: Uint8Array, offset: number) {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(offset, true);
+}
+
+function readUint32LE(bytes: Uint8Array, offset: number) {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true);
+}
+
+async function decodeZipTextEntry(data: Uint8Array, compressionMethod: number) {
+  if (compressionMethod === 0) {
+    return new TextDecoder().decode(data);
+  }
+  if (compressionMethod !== 8) {
+    throw new Error("invalid xlsx file");
+  }
+  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Response(stream).text();
+}
+
+async function unzipTextEntries(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let eocdOffset = -1;
+  for (let offset = bytes.length - 22; offset >= 0; offset -= 1) {
+    if (readUint32LE(bytes, offset) === ZIP_END_OF_CENTRAL_DIRECTORY) {
+      eocdOffset = offset;
+      break;
+    }
+  }
+  if (eocdOffset < 0) {
+    throw new Error("invalid xlsx file");
+  }
+
+  const centralDirectoryOffset = readUint32LE(bytes, eocdOffset + 16);
+  const entries = readUint16LE(bytes, eocdOffset + 10);
+  const decoder = new TextDecoder();
+  const files = new Map<string, string>();
+  let offset = centralDirectoryOffset;
+
+  for (let i = 0; i < entries; i += 1) {
+    if (readUint32LE(bytes, offset) !== ZIP_CENTRAL_DIRECTORY) {
+      throw new Error("invalid xlsx file");
+    }
+
+    const compressionMethod = readUint16LE(bytes, offset + 10);
+    const compressedSize = readUint32LE(bytes, offset + 20);
+    const fileNameLength = readUint16LE(bytes, offset + 28);
+    const extraLength = readUint16LE(bytes, offset + 30);
+    const commentLength = readUint16LE(bytes, offset + 32);
+    const localHeaderOffset = readUint32LE(bytes, offset + 42);
+    const fileName = decoder.decode(bytes.slice(offset + 46, offset + 46 + fileNameLength));
+
+    if (readUint32LE(bytes, localHeaderOffset) !== ZIP_LOCAL_FILE_HEADER) {
+      throw new Error("invalid xlsx file");
+    }
+
+    const localNameLength = readUint16LE(bytes, localHeaderOffset + 26);
+    const localExtraLength = readUint16LE(bytes, localHeaderOffset + 28);
+    const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+    const compressedData = bytes.slice(dataStart, dataStart + compressedSize);
+
+    files.set(fileName, await decodeZipTextEntry(compressedData, compressionMethod));
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  return files;
+}
+
+function decodeXmlText(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function parseXmlAttributes(raw: string) {
+  const attrs: Record<string, string> = {};
+  for (const match of raw.matchAll(/([A-Za-z_:][A-Za-z0-9_.:-]*)="([^"]*)"/g)) {
+    attrs[match[1]] = decodeXmlText(match[2]);
+  }
+  return attrs;
+}
+
+function readSharedStrings(xml: string | undefined) {
+  if (!xml) return [];
+
+  const items: string[] = [];
+  for (const match of xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)) {
+    const parts = Array.from(match[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)).map((item) => decodeXmlText(item[1]));
+    items.push(parts.join(""));
+  }
+  return items;
+}
+
+function columnIndexFromCellRef(cellRef: string) {
+  const letters = cellRef.replace(/\d+/g, "").toUpperCase();
+  let result = 0;
+  for (const letter of letters) {
+    result = result * 26 + (letter.charCodeAt(0) - 64);
+  }
+  return Math.max(result - 1, 0);
+}
+
+function readWorksheetRows(xml: string, sharedStrings: string[]) {
+  const rows: string[][] = [];
+  for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+    const row: string[] = [];
+    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+      const attrs = parseXmlAttributes(cellMatch[1]);
+      const columnIndex = columnIndexFromCellRef(attrs.r ?? "A1");
+      const type = attrs.t ?? "";
+      let value = "";
+
+      if (type === "inlineStr") {
+        const parts = Array.from(cellMatch[2].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)).map((item) => decodeXmlText(item[1]));
+        value = parts.join("");
+      } else {
+        const rawValue = cellMatch[2].match(/<v>([\s\S]*?)<\/v>/)?.[1] ?? "";
+        if (type === "s") {
+          const sharedIndex = Number(rawValue);
+          value = Number.isInteger(sharedIndex) && sharedIndex >= 0 ? sharedStrings[sharedIndex] ?? "" : "";
+        } else {
+          value = decodeXmlText(rawValue);
+        }
+      }
+
+      while (row.length <= columnIndex) {
+        row.push("");
+      }
+      row[columnIndex] = value;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+async function readImportXlsxRows(file: File, requestedSheet: string) {
+  const entries = await unzipTextEntries(await file.arrayBuffer());
+  const workbookXml = entries.get("xl/workbook.xml");
+  const workbookRelsXml = entries.get("xl/_rels/workbook.xml.rels");
+  if (!workbookXml || !workbookRelsXml) {
+    throw new Error("invalid xlsx file");
+  }
+
+  const sheets = Array.from(workbookXml.matchAll(/<sheet\b([^>]*)\/>/g)).map((match) => {
+    const attrs = parseXmlAttributes(match[1]);
+    return { name: attrs.name ?? "", relId: attrs["r:id"] ?? "" };
+  });
+  if (sheets.length === 0) {
+    throw new Error("xlsx has no sheets");
+  }
+
+  const relationships = new Map<string, string>();
+  for (const match of workbookRelsXml.matchAll(/<Relationship\b([^>]*)\/>/g)) {
+    const attrs = parseXmlAttributes(match[1]);
+    if (attrs.Id && attrs.Target) {
+      relationships.set(attrs.Id, attrs.Target.replace(/^\//, ""));
+    }
+  }
+
+  const selectedSheet = requestedSheet.trim()
+    ? sheets.find((sheet) => sheet.name === requestedSheet.trim())
+    : sheets[0];
+  if (!selectedSheet) {
+    throw new Error("sheet is invalid");
+  }
+
+  const target = relationships.get(selectedSheet.relId);
+  if (!target) {
+    throw new Error("sheet is invalid");
+  }
+
+  const worksheetXml = entries.get(`xl/${target}`);
+  if (!worksheetXml) {
+    throw new Error("sheet is invalid");
+  }
+
+  return readWorksheetRows(worksheetXml, readSharedStrings(entries.get("xl/sharedStrings.xml")));
+}
+
+async function readImportFileRows(file: File, sheet: string) {
+  const lowerName = file.name.toLowerCase();
+  if (lowerName.endsWith(".csv")) {
+    return parseCsvText(await file.text());
+  }
+  if (lowerName.endsWith(".xlsx")) {
+    return readImportXlsxRows(file, sheet);
+  }
+  throw new Error("file must be .csv or .xlsx");
+}
+
+function normalizeImportIdentity(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function validateImportRows(rows: ImportFileRow[]) {
+  const rowErrors: Array<{ row: number; field: string; message: string }> = [];
+  const normalizedRows: ImportFileRow[] = [];
+  const placeWarehouseNos = new Map<string, string>();
+  const warehousePlaces = new Map<string, string>();
+
+  for (const row of rows) {
+    const normalized = {
+      row: row.row,
+      placeName: row.placeName.trim(),
+      address: row.address.trim(),
+      warehouseNo: row.warehouseNo.trim(),
+      toolName: row.toolName.trim(),
+    };
+
+    if (!normalized.placeName && !normalized.address && !normalized.warehouseNo && !normalized.toolName) {
+      continue;
+    }
+
+    if (!normalized.placeName) {
+      rowErrors.push({ row: normalized.row, field: "placeName", message: "placeName is required" });
+    }
+    if (!normalized.warehouseNo) {
+      rowErrors.push({ row: normalized.row, field: "warehouseNo", message: "warehouseNo is required" });
+    }
+    if (!normalized.toolName) {
+      rowErrors.push({ row: normalized.row, field: "toolName", message: "toolName is required" });
+    }
+    if (normalized.warehouseNo.includes("-")) {
+      rowErrors.push({ row: normalized.row, field: "warehouseNo", message: "warehouseNo must not contain '-'" });
+    }
+
+    if (normalized.placeName && normalized.warehouseNo) {
+      const placeKey = normalizeImportIdentity(normalized.placeName);
+      const warehouseKey = normalizeImportIdentity(normalized.warehouseNo);
+
+      const existingWarehouseKey = placeWarehouseNos.get(placeKey);
+      if (existingWarehouseKey && existingWarehouseKey !== warehouseKey) {
+        rowErrors.push({ row: normalized.row, field: "warehouseNo", message: "warehouseNo conflicts in the same file" });
+      } else {
+        placeWarehouseNos.set(placeKey, warehouseKey);
+      }
+
+      const existingPlaceKey = warehousePlaces.get(warehouseKey);
+      if (existingPlaceKey && existingPlaceKey !== placeKey) {
+        rowErrors.push({ row: normalized.row, field: "placeName", message: "placeName conflicts in the same file" });
+      } else {
+        warehousePlaces.set(warehouseKey, placeKey);
+      }
+    }
+
+    normalizedRows.push(normalized);
+  }
+
+  return { normalizedRows, rowErrors };
+}
+
+function applyImportRows(rows: ImportFileRow[]) {
+  const { normalizedRows, rowErrors } = validateImportRows(rows);
+  if (rowErrors.length > 0) {
+    return { rowErrors };
+  }
+
+  const nextWarehouses = warehouses.map((warehouse) => ({ ...warehouse }));
+  const nextTools = tools.map((tool) => ({ ...tool }));
+  const warehouseByPlace = new Map<string, Warehouse>();
+  const warehouseNoOwners = new Map<string, string>();
+  const updatedWarehouseIDs = new Set<string>();
+  let pendingNextWarehouseNo = nextWarehouseNo;
+  let pendingNextToolNo = nextToolNo;
+
+  for (const warehouse of nextWarehouses) {
+    const placeKey = normalizeImportIdentity(warehouse.name);
+    warehouseByPlace.set(placeKey, warehouse);
+    const warehouseNoKey = normalizeImportIdentity(warehouse.warehouseNo ?? "");
+    if (warehouseNoKey && !warehouseNoOwners.has(warehouseNoKey)) {
+      warehouseNoOwners.set(warehouseNoKey, placeKey);
+    }
+  }
+
+  for (const row of normalizedRows) {
+    const placeKey = normalizeImportIdentity(row.placeName);
+    const warehouseNoKey = normalizeImportIdentity(row.warehouseNo);
+    const currentWarehouse = warehouseByPlace.get(placeKey);
+
+    if (currentWarehouse) {
+      const currentWarehouseNoKey = normalizeImportIdentity(currentWarehouse.warehouseNo ?? "");
+      if (!currentWarehouseNoKey) {
+        const owner = warehouseNoOwners.get(warehouseNoKey);
+        if (owner && owner !== placeKey) {
+          rowErrors.push({ row: row.row, field: "warehouseNo", message: "warehouseNo conflicts with existing warehouse" });
+          continue;
+        }
+        currentWarehouse.warehouseNo = row.warehouseNo;
+        warehouseNoOwners.set(warehouseNoKey, placeKey);
+        updatedWarehouseIDs.add(currentWarehouse.id);
+      } else if (currentWarehouseNoKey !== warehouseNoKey) {
+        rowErrors.push({ row: row.row, field: "warehouseNo", message: "warehouseNo conflicts with existing warehouse" });
+        continue;
+      }
+
+      if (row.address && row.address !== (currentWarehouse.address ?? "")) {
+        currentWarehouse.address = row.address;
+        updatedWarehouseIDs.add(currentWarehouse.id);
+      }
+      continue;
+    }
+
+    const owner = warehouseNoOwners.get(warehouseNoKey);
+    if (owner && owner !== placeKey) {
+      rowErrors.push({ row: row.row, field: "placeName", message: "placeName conflicts with existing warehouse" });
+      continue;
+    }
+
+    const createdWarehouse: Warehouse = {
+      id: `w-${pendingNextWarehouseNo++}`,
+      name: row.placeName,
+      address: row.address || null,
+      warehouseNo: row.warehouseNo,
+    };
+    nextWarehouses.push(createdWarehouse);
+    warehouseByPlace.set(placeKey, createdWarehouse);
+    warehouseNoOwners.set(warehouseNoKey, placeKey);
+  }
+
+  if (rowErrors.length > 0) {
+    return { rowErrors };
+  }
+
+  for (const row of normalizedRows) {
+    const warehouse = warehouseByPlace.get(normalizeImportIdentity(row.placeName));
+    if (!warehouse) {
+      rowErrors.push({ row: row.row, field: "placeName", message: "placeName conflicts with existing warehouse" });
+      continue;
+    }
+
+    const nextAssetNo = nextToolAssetNo(warehouse.id, nextTools);
+    if (nextAssetNo.error) {
+      rowErrors.push({ row: row.row, field: "warehouseNo", message: nextAssetNo.error });
+      continue;
+    }
+
+    nextTools.push({
+      id: `t-${pendingNextToolNo++}`,
+      assetNo: nextAssetNo.assetNo,
+      name: row.toolName,
+      warehouseId: warehouse.id,
+      baseStatus: "AVAILABLE",
+    });
+  }
+
+  if (rowErrors.length > 0) {
+    return { rowErrors };
+  }
+
+  const createdWarehouseIDs = new Set(nextWarehouses.map((warehouse) => warehouse.id));
+  const warehousesCreated = nextWarehouses.filter((warehouse) => !warehouses.some((current) => current.id === warehouse.id)).length;
+
+  warehouses = nextWarehouses;
+  tools = nextTools;
+  nextWarehouseNo = pendingNextWarehouseNo;
+  nextToolNo = pendingNextToolNo;
+
+  return {
+    warehousesCreated,
+    warehousesUpdated: updatedWarehouseIDs.size,
+    toolsCreated: normalizedRows.length,
+    createdWarehouseIDs,
+  };
+}
+
 export const handlers = [
   http.post("/api/auth/login", async ({ request }) => {
     let body: unknown = null;
@@ -743,15 +1279,44 @@ export const handlers = [
     if (!(file instanceof File)) {
       return errorResponse(400, "INVALID_REQUEST", "file is required");
     }
-    if (!file.name.toLowerCase().endsWith(".xlsx")) {
-      return errorResponse(400, "INVALID_REQUEST", "file must be .xlsx");
+
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith(".csv") && !lowerName.endsWith(".xlsx")) {
+      return errorResponse(400, "INVALID_REQUEST", "file must be .csv or .xlsx");
     }
+
+    let table: string[][];
+    try {
+      const sheet = new URL(request.url).searchParams.get("sheet") ?? "";
+      table = await readImportFileRows(file, sheet);
+    } catch (error) {
+      return errorResponse(400, "INVALID_REQUEST", error instanceof Error ? error.message : "invalid xlsx file");
+    }
+
+    const { rows, missingHeaders } = parseImportRows(table);
+    if (missingHeaders.length > 0) {
+      return errorResponse(400, "INVALID_REQUEST", "required headers are missing", { headers: missingHeaders });
+    }
+    if (rows.length === 0) {
+      return errorResponse(400, "INVALID_REQUEST", "no import rows found");
+    }
+
+    const result = applyImportRows(rows);
+    if ("rowErrors" in result) {
+      return errorResponse(400, "INVALID_REQUEST", "invalid import payload", { rowErrors: result.rowErrors });
+    }
+
+    addAuditLog("import_excel_warehouses_tools", "import", undefined, auth.user.id, {
+      warehousesCreated: result.warehousesCreated,
+      warehousesUpdated: result.warehousesUpdated,
+      toolsCreated: result.toolsCreated,
+    });
 
     return HttpResponse.json(
       {
-        warehousesCreated: 0,
-        warehousesUpdated: 0,
-        toolsCreated: 0,
+        warehousesCreated: result.warehousesCreated,
+        warehousesUpdated: result.warehousesUpdated,
+        toolsCreated: result.toolsCreated,
       },
       { status: 201 },
     );

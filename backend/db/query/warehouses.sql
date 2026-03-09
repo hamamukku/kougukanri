@@ -3,6 +3,12 @@ SELECT id, name, address, warehouse_no, created_at, updated_at
 FROM warehouses
 ORDER BY name ASC;
 
+-- name: ListWarehousesForUpdate :many
+SELECT id, name, address, warehouse_no, created_at, updated_at
+FROM warehouses
+ORDER BY name ASC
+FOR UPDATE;
+
 -- name: CreateWarehouse :one
 INSERT INTO warehouses (
     name,

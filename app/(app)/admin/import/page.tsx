@@ -3,8 +3,8 @@
 import { type ChangeEvent, useRef, useState } from "react";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
-import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 import { clearAuthSession } from "../../../../src/utils/auth";
+import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 
 type ImportResult = {
   warehousesCreated: number;
@@ -19,23 +19,35 @@ type RowError = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  warehouseName: "倉庫名",
-  warehouseNo: "倉庫番号",
+  placeName: "場所名",
+  place: "場所名",
+  warehouseName: "場所名",
+  address: "住所",
+  warehouseNo: "管理番号",
   toolName: "工具名",
+  assetNo: "工具ID",
 };
 
 const ERROR_MESSAGE_LABELS: Record<string, string> = {
   "invalid import payload": "インポート内容に不備があります",
-  "excel file is required": "Excelファイルが必要です",
-  "sheet not found": "指定したシートが見つかりません",
-  "warehouse name is required": "倉庫名は必須です",
-  "tool name is required": "工具名は必須です",
-  "warehouse number conflicts with existing data": "既存の倉庫番号と一致しません",
-  "warehouse_no conflicts with existing value": "既存の倉庫番号と一致しません",
-  "warehouseNo is required": "倉庫番号は必須です",
-  "warehouseNo must not contain '-'": "倉庫番号に「-」は使用できません",
-  "warehouseNo conflicts in the same file": "倉庫番号の割当がファイル内で衝突しています",
-  "warehouseNo conflicts with existing warehouse": "倉庫番号が既存データと衝突しています",
+  "required headers are missing": "必須ヘッダーが不足しています",
+  "file is required": "ファイルが必要です",
+  "file must be .csv or .xlsx": "CSV / Excel ファイル（.csv, .xlsx）を選択してください",
+  "invalid csv file": "CSV を読み取れませんでした",
+  "invalid xlsx file": "XLSX を読み取れませんでした",
+  "xlsx has no sheets": "XLSX にシートがありません",
+  "sheet is invalid": "指定したシートが見つかりません",
+  "no import rows found": "取込対象の行がありません",
+  "placeName is required": "場所名は必須です",
+  "warehouseNo is required": "管理番号は必須です",
+  "warehouseNo must not contain '-'": "管理番号に「-」は使用できません",
+  "warehouseNo conflicts in the same file": "同じ場所名に異なる管理番号が含まれています",
+  "placeName conflicts in the same file": "同じ管理番号に異なる場所名が含まれています",
+  "placeName conflicts with existing warehouse": "同じ管理番号を持つ別名の場所が既存データにあります",
+  "warehouseNo conflicts with existing warehouse": "既存の場所名に別の管理番号が設定されています",
+  "toolName is required": "工具名は必須です",
+  "assetNo already exists": "工具IDの自動採番で競合が発生しました",
+  "warehouseNo is required for assetNo generation": "管理番号が未設定のため工具IDを自動採番できません",
   "internal server error": "サーバーエラーが発生しました",
 };
 
@@ -129,15 +141,15 @@ export default function AdminImportPage() {
 
   return (
     <main>
-      <h1>Excel取込</h1>
+      <h1>ファイル取込</h1>
 
       <section className="card-surface" style={{ marginTop: 12, padding: 12, display: "grid", gap: 10, maxWidth: 720 }}>
         <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>Excelファイル（.xlsx）</div>
+          <div style={{ fontSize: 12, marginBottom: 4 }}>CSV / Excel ファイル（.csv, .xlsx）</div>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={onFileChange}
             style={{ display: "none" }}
           />
@@ -145,9 +157,7 @@ export default function AdminImportPage() {
             <Button type="button" variant="ghost" onClick={openFilePicker} disabled={submitting}>
               ファイルを選択
             </Button>
-            <span style={{ fontSize: 13, color: file ? "inherit" : "#64748b" }}>
-              {file ? file.name : "ファイル未選択"}
-            </span>
+            <span style={{ fontSize: 13, color: file ? "inherit" : "#64748b" }}>{file ? file.name : "ファイル未選択"}</span>
           </div>
         </div>
 
@@ -157,8 +167,10 @@ export default function AdminImportPage() {
         </div>
 
         <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.6 }}>
-          <div>・倉庫番号は必須です</div>
-          <div>・工具IDは 倉庫番号-001 形式で自動採番されます</div>
+          <div>・ヘッダーは 場所名 / 住所 / 管理番号 / 工具名</div>
+          <div>・工具IDは自動採番です</div>
+          <div>・管理番号にハイフンは使用不可です</div>
+          <div>・XLSX の場合のみシート名指定可</div>
         </div>
 
         <div>
@@ -171,8 +183,8 @@ export default function AdminImportPage() {
       {result ? (
         <section className="card-surface" style={{ marginTop: 12, padding: 12, maxWidth: 720 }}>
           <h2 style={{ margin: 0, fontSize: 16 }}>取込結果</h2>
-          <div style={{ marginTop: 8 }}>倉庫作成: {result.warehousesCreated}件</div>
-          <div>倉庫番号更新: {result.warehousesUpdated}件</div>
+          <div style={{ marginTop: 8 }}>場所作成: {result.warehousesCreated}件</div>
+          <div>場所更新: {result.warehousesUpdated}件</div>
           <div>工具作成: {result.toolsCreated}件</div>
         </section>
       ) : null}

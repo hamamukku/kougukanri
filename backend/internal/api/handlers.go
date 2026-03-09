@@ -1,9 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
+	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -667,92 +671,103 @@ func (h *Handler) createToolsBulk(c *gin.Context) {
 	})
 }
 
-func normalizeImportExcelHeader(v string) string {
-	replacer := strings.NewReplacer(" ", "", "　", "", "_", "", "-", "")
+func normalizeImportFileHeader(v string) string {
+	replacer := strings.NewReplacer(" ", "", "　", "", "_", "", "-", "", "\uFEFF", "")
 	return strings.ToLower(replacer.Replace(strings.TrimSpace(v)))
 }
 
-func getExcelCellValue(row []string, index int) string {
+func getImportCellValue(row []string, index int) string {
 	if index < 0 || index >= len(row) {
 		return ""
 	}
 	return strings.TrimSpace(row[index])
 }
 
-type importExcelColumnIndexes struct {
+type importFileColumnIndexes struct {
+	PlaceName     int
+	Address       int
+	WarehouseNo   int
 	ToolName      int
-	AssetNo       int
-	WarehouseName int
-	BaseStatus    int
+	LegacyAssetNo int
+	LegacyStatus  int
 	HasHeader     bool
 }
 
-func detectImportExcelColumnIndexes(firstRow []string) importExcelColumnIndexes {
-	indexes := importExcelColumnIndexes{
+func detectImportFileColumnIndexes(firstRow []string) importFileColumnIndexes {
+	indexes := importFileColumnIndexes{
+		PlaceName:     -1,
+		Address:       -1,
+		WarehouseNo:   -1,
 		ToolName:      -1,
-		AssetNo:       -1,
-		WarehouseName: -1,
-		BaseStatus:    -1,
+		LegacyAssetNo: -1,
+		LegacyStatus:  -1,
 		HasHeader:     false,
 	}
 
 	for i, cell := range firstRow {
-		normalized := normalizeImportExcelHeader(cell)
+		normalized := normalizeImportFileHeader(cell)
 		switch normalized {
+		case "場所名", "場所", "倉庫名", "place", "placename", "warehouse", "warehousename":
+			indexes.PlaceName = i
+			indexes.HasHeader = true
+		case "住所", "address":
+			indexes.Address = i
+			indexes.HasHeader = true
+		case "管理番号", "倉庫番号", "warehouseno":
+			indexes.WarehouseNo = i
+			indexes.HasHeader = true
 		case "工具名", "toolname":
 			indexes.ToolName = i
 			indexes.HasHeader = true
 		case "工具id", "toolid", "assetno":
-			indexes.AssetNo = i
-			indexes.HasHeader = true
-		case "場所", "場所名", "倉庫名", "place", "placename", "warehouse", "warehousename":
-			indexes.WarehouseName = i
+			indexes.LegacyAssetNo = i
 			indexes.HasHeader = true
 		case "状態", "status", "basestatus":
-			indexes.BaseStatus = i
+			indexes.LegacyStatus = i
 			indexes.HasHeader = true
 		}
 	}
 
 	if !indexes.HasHeader {
-		indexes.ToolName = 0
-		indexes.AssetNo = 1
-		indexes.WarehouseName = 2
-		indexes.BaseStatus = 3
+		indexes.PlaceName = 0
+		indexes.Address = 1
+		indexes.WarehouseNo = 2
+		indexes.ToolName = 3
 	}
 
 	return indexes
 }
 
-func missingImportExcelRequiredHeaders(indexes importExcelColumnIndexes) []string {
+func missingImportRequiredHeaders(indexes importFileColumnIndexes) []string {
 	missing := make([]string, 0, 4)
+	if indexes.PlaceName < 0 {
+		missing = append(missing, "場所名")
+	}
+	if indexes.Address < 0 {
+		missing = append(missing, "住所")
+	}
+	if indexes.WarehouseNo < 0 {
+		missing = append(missing, "管理番号")
+	}
 	if indexes.ToolName < 0 {
 		missing = append(missing, "工具名")
-	}
-	if indexes.AssetNo < 0 {
-		missing = append(missing, "工具ID")
-	}
-	if indexes.WarehouseName < 0 {
-		missing = append(missing, "場所")
-	}
-	if indexes.BaseStatus < 0 {
-		missing = append(missing, "状態")
 	}
 	return missing
 }
 
-func parseImportExcelRows(rows [][]string) ([]app.ImportExcelRow, []string) {
+func parseImportRows(rows [][]string) ([]app.ImportExcelRow, []string) {
 	if len(rows) == 0 {
 		return []app.ImportExcelRow{}, nil
 	}
 
-	indexes := detectImportExcelColumnIndexes(rows[0])
+	indexes := detectImportFileColumnIndexes(rows[0])
 	if indexes.HasHeader {
-		missingHeaders := missingImportExcelRequiredHeaders(indexes)
+		missingHeaders := missingImportRequiredHeaders(indexes)
 		if len(missingHeaders) > 0 {
 			return nil, missingHeaders
 		}
 	}
+
 	startIndex := 0
 	if indexes.HasHeader {
 		startIndex = 1
@@ -761,25 +776,59 @@ func parseImportExcelRows(rows [][]string) ([]app.ImportExcelRow, []string) {
 	result := make([]app.ImportExcelRow, 0, len(rows))
 	for i := startIndex; i < len(rows); i++ {
 		row := rows[i]
-		toolName := getExcelCellValue(row, indexes.ToolName)
-		assetNo := getExcelCellValue(row, indexes.AssetNo)
-		warehouseName := getExcelCellValue(row, indexes.WarehouseName)
-		baseStatus := getExcelCellValue(row, indexes.BaseStatus)
+		placeName := getImportCellValue(row, indexes.PlaceName)
+		address := getImportCellValue(row, indexes.Address)
+		warehouseNo := getImportCellValue(row, indexes.WarehouseNo)
+		toolName := getImportCellValue(row, indexes.ToolName)
 
-		if toolName == "" && assetNo == "" && warehouseName == "" && baseStatus == "" {
+		if placeName == "" && address == "" && warehouseNo == "" && toolName == "" {
 			continue
 		}
 
 		result = append(result, app.ImportExcelRow{
-			Row:           i + 1,
-			ToolName:      toolName,
-			AssetNo:       assetNo,
-			WarehouseName: warehouseName,
-			BaseStatus:    baseStatus,
+			Row:         i + 1,
+			PlaceName:   placeName,
+			Address:     address,
+			WarehouseNo: warehouseNo,
+			ToolName:    toolName,
 		})
 	}
 
 	return result, nil
+}
+
+func readImportCSVRows(r io.Reader) ([][]string, error) {
+	reader := csv.NewReader(r)
+	reader.FieldsPerRecord = -1
+
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil, apierr.InvalidRequest("invalid csv file", nil)
+	}
+	return rows, nil
+}
+
+func readImportXLSXRows(r io.Reader, sheetName string) ([][]string, error) {
+	workbook, err := excelize.OpenReader(r)
+	if err != nil {
+		return nil, apierr.InvalidRequest("invalid xlsx file", nil)
+	}
+	defer workbook.Close()
+
+	resolvedSheet := strings.TrimSpace(sheetName)
+	if resolvedSheet == "" {
+		sheets := workbook.GetSheetList()
+		if len(sheets) == 0 {
+			return nil, apierr.InvalidRequest("xlsx has no sheets", nil)
+		}
+		resolvedSheet = sheets[0]
+	}
+
+	rows, err := workbook.GetRows(resolvedSheet)
+	if err != nil {
+		return nil, apierr.InvalidRequest("sheet is invalid", map[string]any{"sheet": resolvedSheet})
+	}
+	return rows, nil
 }
 
 func (h *Handler) importWarehousesToolsExcel(c *gin.Context) {
@@ -789,8 +838,10 @@ func (h *Handler) importWarehousesToolsExcel(c *gin.Context) {
 		WriteError(c, apierr.InvalidRequest("file is required", nil))
 		return
 	}
-	if !strings.HasSuffix(strings.ToLower(strings.TrimSpace(fileHeader.Filename)), ".xlsx") {
-		WriteError(c, apierr.InvalidRequest("file must be .xlsx", nil))
+
+	ext := strings.ToLower(strings.TrimSpace(filepath.Ext(fileHeader.Filename)))
+	if ext != ".csv" && ext != ".xlsx" {
+		WriteError(c, apierr.InvalidRequest("file must be .csv or .xlsx", nil))
 		return
 	}
 
@@ -801,29 +852,25 @@ func (h *Handler) importWarehousesToolsExcel(c *gin.Context) {
 	}
 	defer file.Close()
 
-	workbook, err := excelize.OpenReader(file)
+	fileData, err := io.ReadAll(file)
 	if err != nil {
-		WriteError(c, apierr.InvalidRequest("invalid xlsx file", nil))
+		WriteError(c, apierr.InvalidRequest("failed to read uploaded file", nil))
 		return
 	}
-	defer workbook.Close()
 
-	sheetName := strings.TrimSpace(c.Query("sheet"))
-	if sheetName == "" {
-		sheets := workbook.GetSheetList()
-		if len(sheets) == 0 {
-			WriteError(c, apierr.InvalidRequest("xlsx has no sheets", nil))
-			return
-		}
-		sheetName = sheets[0]
+	var rawRows [][]string
+	switch ext {
+	case ".csv":
+		rawRows, err = readImportCSVRows(bytes.NewReader(fileData))
+	case ".xlsx":
+		rawRows, err = readImportXLSXRows(bytes.NewReader(fileData), c.Query("sheet"))
 	}
-
-	rawRows, err := workbook.GetRows(sheetName)
 	if err != nil {
-		WriteError(c, apierr.InvalidRequest("sheet is invalid", map[string]any{"sheet": sheetName}))
+		WriteError(c, err)
 		return
 	}
-	rows, missingHeaders := parseImportExcelRows(rawRows)
+
+	rows, missingHeaders := parseImportRows(rawRows)
 	if len(missingHeaders) > 0 {
 		WriteError(c, apierr.InvalidRequest("required headers are missing", map[string]any{
 			"headers": missingHeaders,
@@ -942,14 +989,14 @@ func (h *Handler) patchTool(c *gin.Context) {
 	}
 
 	assetNo := req.AssetNo
-		if req.ToolID != nil {
-			if assetNo == nil {
-				assetNo = req.ToolID
-			} else if strings.TrimSpace(*assetNo) != strings.TrimSpace(*req.ToolID) {
-				WriteError(c, apierr.InvalidRequest("assetNo and toolId do not match", nil))
-				return
-			}
+	if req.ToolID != nil {
+		if assetNo == nil {
+			assetNo = req.ToolID
+		} else if strings.TrimSpace(*assetNo) != strings.TrimSpace(*req.ToolID) {
+			WriteError(c, apierr.InvalidRequest("assetNo and toolId do not match", nil))
+			return
 		}
+	}
 
 	tool, err := h.svc.UpdateTool(c.Request.Context(), user.ID, toolID, app.UpdateToolInput{
 		AssetNo:     assetNo,

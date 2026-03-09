@@ -52,7 +52,6 @@ CREATE TABLE loan_boxes (
     due_date DATE NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (borrower_id, box_no),
     CHECK (due_date >= start_date)
 );
 
@@ -105,6 +104,7 @@ CREATE INDEX idx_tools_warehouse_id ON tools(warehouse_id);
 CREATE INDEX idx_tools_retired_at ON tools(retired_at);
 CREATE UNIQUE INDEX tools_asset_no_key ON tools(asset_no) WHERE retired_at IS NULL;
 CREATE UNIQUE INDEX idx_tools_tag_id_unique ON tools(tag_id) WHERE tag_id IS NOT NULL;
+CREATE INDEX idx_loan_boxes_borrower_id_box_no ON loan_boxes(borrower_id, box_no);
 CREATE INDEX idx_loan_items_tool_id ON loan_items(tool_id);
 CREATE INDEX idx_loan_items_borrower_id ON loan_items(borrower_id);
 CREATE INDEX idx_loan_items_box_id ON loan_items(box_id);

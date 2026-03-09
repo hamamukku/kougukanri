@@ -7,17 +7,31 @@ import (
 	"github.com/google/uuid"
 )
 
-const getMaxBorrowerBoxNoQuery = `
-SELECT COALESCE(MAX(box_no), 0)::int AS max_box_no
-FROM loan_boxes
-WHERE borrower_id = $1
+const listBorrowerOpenBoxNosQuery = `
+SELECT DISTINCT lb.box_no
+FROM loan_boxes lb
+JOIN loan_items li ON li.box_id = lb.id
+WHERE lb.borrower_id = $1
+  AND li.return_approved_at IS NULL
+ORDER BY lb.box_no ASC
 `
 
-func (q *Queries) GetMaxBorrowerBoxNo(ctx context.Context, borrowerID uuid.UUID) (int32, error) {
-	row := q.db.QueryRowContext(ctx, getMaxBorrowerBoxNoQuery, borrowerID)
-	var max int32
-	err := row.Scan(&max)
-	return max, err
+func (q *Queries) ListBorrowerOpenBoxNos(ctx context.Context, borrowerID uuid.UUID) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, listBorrowerOpenBoxNosQuery, borrowerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]int32, 0)
+	for rows.Next() {
+		var boxNo int32
+		if err := rows.Scan(&boxNo); err != nil {
+			return nil, err
+		}
+		items = append(items, boxNo)
+	}
+	return items, rows.Err()
 }
 
 type CreateLoanBoxParams struct {

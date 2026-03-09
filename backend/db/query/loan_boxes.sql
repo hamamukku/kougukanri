@@ -1,7 +1,10 @@
--- name: GetMaxBorrowerBoxNo :one
-SELECT COALESCE(MAX(box_no), 0)::int AS max_box_no
-FROM loan_boxes
-WHERE borrower_id = $1;
+-- name: ListBorrowerOpenBoxNos :many
+SELECT DISTINCT lb.box_no
+FROM loan_boxes lb
+JOIN loan_items li ON li.box_id = lb.id
+WHERE lb.borrower_id = $1
+  AND li.return_approved_at IS NULL
+ORDER BY lb.box_no ASC;
 
 -- name: CreateLoanBox :one
 INSERT INTO loan_boxes (

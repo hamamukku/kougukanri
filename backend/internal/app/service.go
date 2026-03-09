@@ -2188,6 +2188,21 @@ type CreateLoanBoxResult struct {
 	CreatedItems   []CreatedLoanItem
 }
 
+func nextOpenBorrowerBoxNo(used []int32) int32 {
+	next := int32(1)
+	for _, boxNo := range used {
+		if boxNo < next {
+			continue
+		}
+		if boxNo == next {
+			next++
+			continue
+		}
+		break
+	}
+	return next
+}
+
 func (s *Service) CreateLoanBox(ctx context.Context, borrowerID uuid.UUID, in CreateLoanBoxInput) (CreateLoanBoxResult, error) {
 	if len(in.ToolIDs) == 0 {
 		return CreateLoanBoxResult{}, apierr.InvalidRequest("toolIds is required", nil)
@@ -2240,11 +2255,11 @@ func (s *Service) CreateLoanBox(ctx context.Context, borrowerID uuid.UUID, in Cr
 		return CreateLoanBoxResult{}, err
 	}
 
-	maxBoxNo, err := qtx.GetMaxBorrowerBoxNo(ctx, borrowerID)
+	openBoxNos, err := qtx.ListBorrowerOpenBoxNos(ctx, borrowerID)
 	if err != nil {
 		return CreateLoanBoxResult{}, err
 	}
-	boxNo := maxBoxNo + 1
+	boxNo := nextOpenBorrowerBoxNo(openBoxNos)
 	boxDisplayName := fmt.Sprintf("BOX-%03d", boxNo)
 	box, err := qtx.CreateLoanBox(ctx, db.CreateLoanBoxParams{
 		BorrowerID:  borrowerID,

@@ -136,8 +136,8 @@ func TestRunImportWarehousesTools_SamePlaceDifferentWarehouseNoFails(t *testing.
 	store := newFakeImportStore(nil, nil)
 
 	_, err := runImportWarehousesTools(context.Background(), store, []ImportExcelRow{
-		{Row: 2, PlaceName: "第1工場", WarehouseNo: "A100", ToolName: "ドリル"},
-		{Row: 3, PlaceName: "第1工場", WarehouseNo: "A200", ToolName: "レンチ"},
+		{Row: 2, PlaceName: "第1工場", WarehouseNo: "100", ToolName: "ドリル"},
+		{Row: 3, PlaceName: "第1工場", WarehouseNo: "200", ToolName: "レンチ"},
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -156,8 +156,8 @@ func TestRunImportWarehousesTools_SameWarehouseNoDifferentPlaceFails(t *testing.
 	store := newFakeImportStore(nil, nil)
 
 	_, err := runImportWarehousesTools(context.Background(), store, []ImportExcelRow{
-		{Row: 2, PlaceName: "第1工場", WarehouseNo: "A100", ToolName: "ドリル"},
-		{Row: 3, PlaceName: "第2工場", WarehouseNo: "A100", ToolName: "レンチ"},
+		{Row: 2, PlaceName: "第1工場", WarehouseNo: "100", ToolName: "ドリル"},
+		{Row: 3, PlaceName: "第2工場", WarehouseNo: "100", ToolName: "レンチ"},
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -184,8 +184,8 @@ func TestRunImportWarehousesTools_FillsWarehouseNoAndGeneratesAssetNos(t *testin
 	}, nil)
 
 	result, err := runImportWarehousesTools(context.Background(), store, []ImportExcelRow{
-		{Row: 2, PlaceName: "第1工場", Address: "新住所", WarehouseNo: "A100", ToolName: "ドリル"},
-		{Row: 3, PlaceName: "第1工場", Address: "", WarehouseNo: "A100", ToolName: "レンチ"},
+		{Row: 2, PlaceName: "第1工場", Address: "新住所", WarehouseNo: "100", ToolName: "ドリル"},
+		{Row: 3, PlaceName: "第1工場", Address: "", WarehouseNo: "100", ToolName: "レンチ"},
 	})
 	if err != nil {
 		t.Fatalf("runImportWarehousesTools error = %v", err)
@@ -196,8 +196,8 @@ func TestRunImportWarehousesTools_FillsWarehouseNoAndGeneratesAssetNos(t *testin
 	}
 
 	updatedWarehouse := store.warehouses[existingWarehouseID]
-	if !updatedWarehouse.WarehouseNo.Valid || updatedWarehouse.WarehouseNo.String != "A100" {
-		t.Fatalf("updated warehouseNo = %+v, want A100", updatedWarehouse.WarehouseNo)
+	if !updatedWarehouse.WarehouseNo.Valid || updatedWarehouse.WarehouseNo.String != "00100" {
+		t.Fatalf("updated warehouseNo = %+v, want 00100", updatedWarehouse.WarehouseNo)
 	}
 	if !updatedWarehouse.Address.Valid || updatedWarehouse.Address.String != "新住所" {
 		t.Fatalf("updated address = %+v, want 新住所", updatedWarehouse.Address)
@@ -206,19 +206,19 @@ func TestRunImportWarehousesTools_FillsWarehouseNoAndGeneratesAssetNos(t *testin
 	if len(store.tools) != 2 {
 		t.Fatalf("len(store.tools) = %d, want 2", len(store.tools))
 	}
-	if store.tools[0].AssetNo != "A100-001" || store.tools[1].AssetNo != "A100-002" {
-		t.Fatalf("assetNos = %q, %q; want A100-001, A100-002", store.tools[0].AssetNo, store.tools[1].AssetNo)
+	if store.tools[0].AssetNo != "00100-001" || store.tools[1].AssetNo != "00100-002" {
+		t.Fatalf("assetNos = %q, %q; want 00100-001, 00100-002", store.tools[0].AssetNo, store.tools[1].AssetNo)
 	}
 	if store.tools[0].BaseStatus != BaseStatusAvailable || store.tools[1].BaseStatus != BaseStatusAvailable {
 		t.Fatalf("baseStatuses = %q, %q; want AVAILABLE", store.tools[0].BaseStatus, store.tools[1].BaseStatus)
 	}
 }
 
-func TestRunImportWarehousesTools_WarehouseNoHyphenFails(t *testing.T) {
+func TestRunImportWarehousesTools_WarehouseNoNonNumericFails(t *testing.T) {
 	store := newFakeImportStore(nil, nil)
 
 	_, err := runImportWarehousesTools(context.Background(), store, []ImportExcelRow{
-		{Row: 2, PlaceName: "第1工場", WarehouseNo: "A-100", ToolName: "ドリル"},
+		{Row: 2, PlaceName: "第1工場", WarehouseNo: "A100", ToolName: "ドリル"},
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -228,7 +228,7 @@ func TestRunImportWarehousesTools_WarehouseNoHyphenFails(t *testing.T) {
 	if len(rowErrors) != 1 {
 		t.Fatalf("len(rowErrors) = %d, want 1", len(rowErrors))
 	}
-	if rowErrors[0].Row != 2 || rowErrors[0].Field != "warehouseNo" || rowErrors[0].Message != "warehouseNo must not contain '-'" {
+	if rowErrors[0].Row != 2 || rowErrors[0].Field != "warehouseNo" || rowErrors[0].Message != "warehouseNo must contain only digits" {
 		t.Fatalf("rowErrors[0] = %+v", rowErrors[0])
 	}
 }

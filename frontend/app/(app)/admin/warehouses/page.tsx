@@ -145,7 +145,7 @@ export default function AdminWarehousesPage() {
   }, [loadData]);
 
   const onAdd = async () => {
-    if (!name.trim() || submitting) return;
+    if (!name.trim() || !warehouseNo.trim() || submitting) return;
 
     setSubmitting(true);
     setErr(null);
@@ -156,7 +156,7 @@ export default function AdminWarehousesPage() {
         body: JSON.stringify({
           name: name.trim(),
           address: address.trim() || undefined,
-          warehouseNo: warehouseNo.trim() || undefined,
+          warehouseNo: warehouseNo.trim(),
         }),
       });
       setName("");
@@ -309,20 +309,20 @@ export default function AdminWarehousesPage() {
       <div className="card-surface warehouses-form" style={{ marginTop: 12, marginBottom: 12, padding: 12 }}>
         <div>
           <div style={labelStyle}>場所名</div>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="場所名" style={inputStyle} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="" style={inputStyle} />
         </div>
 
         <div>
           <div style={labelStyle}>住所</div>
-          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="住所" style={inputStyle} />
+          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="" style={inputStyle} />
         </div>
 
         <div>
-          <div style={labelStyle}>管理番号（任意）</div>
+          <div style={labelStyle}>管理番号</div>
           <Input
             value={warehouseNo}
             onChange={(e) => setWarehouseNo(e.target.value)}
-            placeholder="例: WH-001"
+            placeholder=""
             style={inputStyle}
           />
         </div>

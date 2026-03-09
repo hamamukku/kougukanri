@@ -62,6 +62,15 @@ FROM loan_items
 WHERE id = $1
 FOR UPDATE;
 
+-- name: ListBorrowerPendingReturnItemsForUpdate :many
+SELECT id, box_id, tool_id, borrower_id, start_date, due_date, return_requested_at, return_requested_by, return_approved_at, return_approved_by, created_at, updated_at
+FROM loan_items
+WHERE borrower_id = $1
+  AND return_requested_at IS NULL
+  AND return_approved_at IS NULL
+ORDER BY created_at ASC, id ASC
+FOR UPDATE;
+
 -- name: MarkLoanItemReturnRequested :exec
 UPDATE loan_items
 SET return_requested_at = $2,
@@ -97,6 +106,14 @@ FROM loan_items
 WHERE box_id = $1
   AND return_requested_at IS NOT NULL
   AND return_approved_at IS NULL
+FOR UPDATE;
+
+-- name: ListAllPendingRequestedItemsForUpdate :many
+SELECT id, box_id, tool_id, borrower_id, start_date, due_date, return_requested_at, return_requested_by, return_approved_at, return_approved_by, created_at, updated_at
+FROM loan_items
+WHERE return_requested_at IS NOT NULL
+  AND return_approved_at IS NULL
+ORDER BY created_at ASC, id ASC
 FOR UPDATE;
 
 -- name: GetLoanItemInBoxForUpdate :one

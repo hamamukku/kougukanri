@@ -26,9 +26,10 @@ CREATE TABLE warehouses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL UNIQUE,
     address TEXT NULL,
-    warehouse_no TEXT NULL,
+    warehouse_no TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT warehouses_warehouse_no_format CHECK (warehouse_no ~ '^[0-9]{5}$')
 );
 
 CREATE TABLE tools (
@@ -117,3 +118,4 @@ CREATE INDEX idx_user_signup_requests_status_requested_at ON user_signup_request
 CREATE UNIQUE INDEX users_user_code_key ON users(user_code) WHERE is_active = TRUE;
 CREATE UNIQUE INDEX users_username_key ON users(username) WHERE is_active = TRUE;
 CREATE UNIQUE INDEX users_email_key ON users(email) WHERE is_active = TRUE;
+CREATE UNIQUE INDEX warehouses_warehouse_no_key ON warehouses(warehouse_no) WHERE NULLIF(BTRIM(warehouse_no), '') IS NOT NULL;

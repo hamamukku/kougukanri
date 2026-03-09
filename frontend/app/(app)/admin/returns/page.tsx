@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Button from "../../../../src/components/ui/Button";
 import { formatDateJa } from "../../../../src/utils/format";
 import { Table, Td, Th } from "../../../../src/components/ui/Table";
+import { useConfirm } from "../../../../src/components/ui/ConfirmProvider";
 import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 import { clearAuthSession } from "../../../../src/utils/auth";
 
@@ -31,8 +32,10 @@ export default function AdminReturnsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<Set<string>>(new Set());
+  const [submittingAll, setSubmittingAll] = useState(false);
   const [selectedLoanItemIdsByBox, setSelectedLoanItemIdsByBox] = useState<Record<string, Set<string>>>({});
   const router = useRouter();
+  const { confirm } = useConfirm();
 
   const handleApiError = useCallback(
     (error: unknown): string | null => {
@@ -89,6 +92,19 @@ export default function AdminReturnsPage() {
 
   const postApprove = async (boxId: string, loanItemIds?: string[]) => {
     const isPartial = Array.isArray(loanItemIds);
+    const selectedCount = loanItemIds?.length ?? 0;
+    const confirmed = await confirm({
+      title: "確認",
+      message: isPartial
+        ? selectedCount === 1
+          ? "選択した1件の返却申請を承認します。よろしいですか？"
+          : `選択した${selectedCount}件の返却申請を承認します。よろしいですか？`
+        : "このBOX内の返却申請をすべて承認します。よろしいですか？",
+      okText: "はい",
+      cancelText: "いいえ",
+    });
+    if (!confirmed) return;
+
     setSubmitting((prev) => new Set(prev).add(boxId));
     try {
       if (isPartial) {
@@ -122,6 +138,30 @@ export default function AdminReturnsPage() {
         next.delete(boxId);
         return next;
       });
+    }
+  };
+
+  const postApproveAll = async () => {
+    if (submittingAll || groups.length === 0) return;
+    const confirmed = await confirm({
+      title: "確認",
+      message: "画面上の返却申請をすべて一括承認します。よろしいですか？",
+      okText: "はい",
+      cancelText: "いいえ",
+    });
+    if (!confirmed) return;
+
+    setSubmittingAll(true);
+    try {
+      await apiFetchJson<{ approvedCount: number }>("/api/admin/returns/approve-all", {
+        method: "POST",
+      });
+      await loadData();
+    } catch (e: unknown) {
+      const message = handleApiError(e);
+      if (message) setErr(message);
+    } finally {
+      setSubmittingAll(false);
     }
   };
 
@@ -166,13 +206,31 @@ export default function AdminReturnsPage() {
           <h1 style={{ fontSize: 34, margin: 0 }}>返却承認</h1>
           <p style={{ fontSize: 20, margin: 0 }}>承認待ちの返却申請はありません。</p>
         </section>
-      ) : (
-        <>
-          <h1 style={{ fontSize: 28, margin: "0 0 12px" }}>返却承認</h1>
+        ) : (
+          <>
+            <h1 style={{ fontSize: 28, margin: "0 0 12px" }}>返却承認</h1>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-start",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+                marginBottom: 16,
+              }}
+            >
+              <Button
+                type="button"
+                disabled={submittingAll || submitting.size > 0 || groupedSorted.length === 0}
+                onClick={postApproveAll}
+              >
+                {submittingAll ? "全ボックス一括承認中..." : "全ボックス一括承認"}
+              </Button>
+            </div>
 
-          {groupedSorted.map((group) => {
-            const selected = selectedForBox(group.boxId);
-            const isBusy = submitting.has(group.boxId);
+            {groupedSorted.map((group) => {
+              const selected = selectedForBox(group.boxId);
+              const isBusy = submittingAll || submitting.has(group.boxId);
 
             return (
               <section key={group.boxId} style={{ marginBottom: 24 }}>

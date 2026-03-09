@@ -47,7 +47,7 @@ const ERROR_MESSAGE_LABELS: Record<string, string> = {
   "warehouse name is required": "場所名は必須です",
   "address is required": "住所は必須です",
   "warehouseNo is required": "管理番号は必須です",
-  "warehouseNo must not contain '-'": "管理番号に「-」は使用できません",
+  "warehouseNo must contain only digits": "管理番号は数字のみで入力してください",
   "warehouseNo conflicts in the same file": "同じ場所名に異なる管理番号が含まれています",
   "placeName conflicts in the same file": "同じ管理番号に異なる場所名が含まれています",
   "placeName conflicts with existing warehouse": "同じ管理番号を持つ別名の場所が既存データにあります",

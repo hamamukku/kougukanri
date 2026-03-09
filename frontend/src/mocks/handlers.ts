@@ -68,14 +68,14 @@ let nextLoanItemNo = 1;
 let nextAuditNo = 1;
 
 let warehouses: Warehouse[] = [
-  { id: "w1", name: "Main Warehouse", address: "東京都千代田区1-1-1", warehouseNo: "WH-001" },
-  { id: "w2", name: "Sub Warehouse", address: null, warehouseNo: null },
+  { id: "w1", name: "Main Warehouse", address: "東京都千代田区1-1-1", warehouseNo: "00001" },
+  { id: "w2", name: "Sub Warehouse", address: null, warehouseNo: "00002" },
 ];
 
 let tools: Tool[] = [
-  { id: "t1", assetNo: "Main Warehouse-001", name: "Drill", warehouseId: "w1", baseStatus: "AVAILABLE" },
-  { id: "t2", assetNo: "Main Warehouse-002", name: "Wrench", warehouseId: "w1", baseStatus: "AVAILABLE" },
-  { id: "t3", assetNo: "Sub Warehouse-001", name: "Saw", warehouseId: "w2", baseStatus: "REPAIR" },
+  { id: "t1", assetNo: "00001-001", name: "Drill", warehouseId: "w1", baseStatus: "AVAILABLE" },
+  { id: "t2", assetNo: "00001-002", name: "Wrench", warehouseId: "w1", baseStatus: "AVAILABLE" },
+  { id: "t3", assetNo: "00002-001", name: "Saw", warehouseId: "w2", baseStatus: "REPAIR" },
 ];
 
 let users: User[] = [
@@ -113,6 +113,33 @@ function nowIso() {
 
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeWarehouseNo(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return { value: "", error: null };
+  if (!/^\d+$/.test(trimmed)) {
+    return { value: "", error: "warehouseNo must contain only digits" };
+  }
+  return { value: trimmed.padStart(5, "0"), error: null };
+}
+
+function compareWarehouses(a: Warehouse, b: Warehouse) {
+  const aWarehouseNo = normalizeWarehouseNo(a.warehouseNo ?? "").value;
+  const bWarehouseNo = normalizeWarehouseNo(b.warehouseNo ?? "").value;
+  const aHasWarehouseNo = !!aWarehouseNo;
+  const bHasWarehouseNo = !!bWarehouseNo;
+  if (aHasWarehouseNo !== bHasWarehouseNo) {
+    return aHasWarehouseNo ? -1 : 1;
+  }
+  if (aWarehouseNo !== bWarehouseNo) {
+    return aWarehouseNo.localeCompare(bWarehouseNo);
+  }
+  const byName = a.name.localeCompare(b.name, "ja");
+  if (byName !== 0) {
+    return byName;
+  }
+  return a.id.localeCompare(b.id);
 }
 
 function toToken(userID: string) {
@@ -690,8 +717,14 @@ function validateImportRows(rows: ImportFileRow[]) {
     if (!normalized.toolName) {
       rowErrors.push({ row: normalized.row, field: "toolName", message: "toolName is required" });
     }
-    if (normalized.warehouseNo.includes("-")) {
-      rowErrors.push({ row: normalized.row, field: "warehouseNo", message: "warehouseNo must not contain '-'" });
+    if (normalized.warehouseNo) {
+      const nextWarehouseNo = normalizeWarehouseNo(normalized.warehouseNo);
+      if (nextWarehouseNo.error) {
+        rowErrors.push({ row: normalized.row, field: "warehouseNo", message: nextWarehouseNo.error });
+        normalized.warehouseNo = "";
+      } else {
+        normalized.warehouseNo = nextWarehouseNo.value;
+      }
     }
 
     if (normalized.placeName && normalized.warehouseNo) {
@@ -736,7 +769,7 @@ function applyImportRows(rows: ImportFileRow[]) {
   for (const warehouse of nextWarehouses) {
     const placeKey = normalizeImportIdentity(warehouse.name);
     warehouseByPlace.set(placeKey, warehouse);
-    const warehouseNoKey = normalizeImportIdentity(warehouse.warehouseNo ?? "");
+    const warehouseNoKey = normalizeImportIdentity(normalizeWarehouseNo(warehouse.warehouseNo ?? "").value);
     if (warehouseNoKey && !warehouseNoOwners.has(warehouseNoKey)) {
       warehouseNoOwners.set(warehouseNoKey, placeKey);
     }
@@ -744,11 +777,11 @@ function applyImportRows(rows: ImportFileRow[]) {
 
   for (const row of normalizedRows) {
     const placeKey = normalizeImportIdentity(row.placeName);
-    const warehouseNoKey = normalizeImportIdentity(row.warehouseNo);
+    const warehouseNoKey = normalizeImportIdentity(normalizeWarehouseNo(row.warehouseNo).value);
     const currentWarehouse = warehouseByPlace.get(placeKey);
 
     if (currentWarehouse) {
-      const currentWarehouseNoKey = normalizeImportIdentity(currentWarehouse.warehouseNo ?? "");
+      const currentWarehouseNoKey = normalizeImportIdentity(normalizeWarehouseNo(currentWarehouse.warehouseNo ?? "").value);
       if (!currentWarehouseNoKey) {
         const owner = warehouseNoOwners.get(warehouseNoKey);
         if (owner && owner !== placeKey) {
@@ -894,13 +927,13 @@ export const handlers = [
   http.get("/api/warehouses", ({ request }) => {
     const auth = authenticate(request);
     if ("error" in auth) return auth.error;
-    return HttpResponse.json(warehouses);
+    return HttpResponse.json([...warehouses].sort(compareWarehouses));
   }),
 
   http.get("/api/admin/warehouses", ({ request }) => {
     const auth = authenticate(request, "admin");
     if ("error" in auth) return auth.error;
-    return HttpResponse.json(warehouses);
+    return HttpResponse.json([...warehouses].sort(compareWarehouses));
   }),
 
   http.get("/api/tools", ({ request }) => {
@@ -1423,15 +1456,30 @@ export const handlers = [
     const obj = readBody(body);
     const name = typeof obj.name === "string" ? obj.name.trim() : "";
     const address = typeof obj.address === "string" ? obj.address.trim() : "";
-    const warehouseNo = typeof obj.warehouseNo === "string" ? obj.warehouseNo.trim() : "";
+    const warehouseNoRaw = typeof obj.warehouseNo === "string" ? obj.warehouseNo : "";
+    const warehouseNoResult = normalizeWarehouseNo(warehouseNoRaw);
     if (!name) {
       return errorResponse(400, "INVALID_REQUEST", "name is required");
+    }
+    if (!warehouseNoRaw.trim()) {
+      return errorResponse(400, "INVALID_REQUEST", "warehouseNo is required");
+    }
+    if (warehouseNoResult.error) {
+      return errorResponse(400, "INVALID_REQUEST", warehouseNoResult.error);
     }
     if (warehouses.some((warehouse) => warehouse.name === name)) {
       return errorResponse(409, "WAREHOUSE_NAME_DUPLICATE", "warehouse name already exists");
     }
+    if (warehouses.some((warehouse) => (warehouse.warehouseNo ?? "").trim() === warehouseNoResult.value)) {
+      return errorResponse(409, "WAREHOUSE_NO_DUPLICATE", "warehouseNo already exists");
+    }
 
-    const warehouse = { id: `w-${nextWarehouseNo++}`, name, address: address || null, warehouseNo: warehouseNo || null };
+    const warehouse = {
+      id: `w-${nextWarehouseNo++}`,
+      name,
+      address: address || null,
+      warehouseNo: warehouseNoResult.value,
+    };
     warehouses = [warehouse, ...warehouses];
 
     addAuditLog("create_warehouse", "warehouse", warehouse.id, auth.user.id, warehouse);
@@ -1458,7 +1506,8 @@ export const handlers = [
     const obj = readBody(body);
     const nextName = typeof obj.name === "string" ? obj.name.trim() : undefined;
     const nextAddress = typeof obj.address === "string" ? obj.address.trim() : undefined;
-    const nextWarehouseNo = typeof obj.warehouseNo === "string" ? obj.warehouseNo.trim() : undefined;
+    const nextWarehouseNo = typeof obj.warehouseNo === "string" ? obj.warehouseNo : undefined;
+    const nextWarehouseNoResult = nextWarehouseNo !== undefined ? normalizeWarehouseNo(nextWarehouseNo) : undefined;
 
     if (nextName === undefined && nextAddress === undefined && nextWarehouseNo === undefined) {
       return errorResponse(400, "INVALID_REQUEST", "at least one field is required");
@@ -1466,11 +1515,27 @@ export const handlers = [
     if (nextName !== undefined && !nextName) {
       return errorResponse(400, "INVALID_REQUEST", "name cannot be empty");
     }
+    if (nextWarehouseNo !== undefined && !nextWarehouseNo.trim()) {
+      return errorResponse(400, "INVALID_REQUEST", "warehouseNo cannot be empty");
+    }
     if (
       nextName !== undefined &&
       warehouses.some((warehouse, currentIndex) => currentIndex !== index && warehouse.name === nextName)
     ) {
       return errorResponse(409, "WAREHOUSE_NAME_DUPLICATE", "warehouse name already exists");
+    }
+    if (nextWarehouseNoResult?.error) {
+      return errorResponse(400, "INVALID_REQUEST", nextWarehouseNoResult.error);
+    }
+    if (
+      nextWarehouseNoResult &&
+      nextWarehouseNoResult.value &&
+      warehouses.some(
+        (warehouse, currentIndex) =>
+          currentIndex !== index && (warehouse.warehouseNo ?? "").trim() === nextWarehouseNoResult.value,
+      )
+    ) {
+      return errorResponse(409, "WAREHOUSE_NO_DUPLICATE", "warehouseNo already exists");
     }
 
     const current = warehouses[index];
@@ -1478,10 +1543,18 @@ export const handlers = [
       ...current,
       ...(nextName !== undefined ? { name: nextName } : {}),
       ...(nextAddress !== undefined ? { address: nextAddress || null } : {}),
-      ...(nextWarehouseNo !== undefined ? { warehouseNo: nextWarehouseNo || null } : {}),
+      ...(nextWarehouseNoResult !== undefined ? { warehouseNo: nextWarehouseNoResult.value || null } : {}),
     };
 
     warehouses[index] = updated;
+    if (nextWarehouseNoResult?.value && current.warehouseNo !== nextWarehouseNoResult.value) {
+      tools = tools.map((tool) => {
+        if (tool.warehouseId !== warehouseID) return tool;
+        const match = tool.assetNo.match(/(-\d+)$/);
+        if (!match) return tool;
+        return { ...tool, assetNo: `${nextWarehouseNoResult.value}${match[1]}` };
+      });
+    }
     addAuditLog("update_warehouse", "warehouse", updated.id, auth.user.id, { before: current, after: updated });
 
     return HttpResponse.json(updated);

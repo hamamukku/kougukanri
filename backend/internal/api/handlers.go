@@ -50,6 +50,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 
 	authed.POST("/loan-boxes", h.createLoanBox)
 	authed.GET("/my/loans", h.listMyLoans)
+	authed.POST("/my/loans/return-request-all", h.returnRequestAll)
 	authed.POST("/my/loans/:loanItemId/return-request", h.returnRequest)
 	authed.GET("/my/profile", h.getMyProfile)
 	authed.PATCH("/my/profile", h.patchMyProfile)
@@ -72,6 +73,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	admin.PATCH("/departments/:departmentId", h.patchDepartment)
 	admin.DELETE("/departments/:departmentId", h.deleteDepartment)
 	admin.GET("/returns/requests", h.listReturnRequests)
+	admin.POST("/returns/approve-all", h.approveReturnAll)
 	admin.POST("/returns/approve-box", h.approveReturnBox)
 	admin.POST("/returns/approve-items", h.approveReturnItems)
 	admin.GET("/users", h.listUsers)
@@ -1162,6 +1164,16 @@ func (h *Handler) returnRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (h *Handler) returnRequestAll(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	count, err := h.svc.RequestReturnAll(c.Request.Context(), user.ID)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"requestedCount": count})
+}
+
 func (h *Handler) listReturnRequests(c *gin.Context) {
 	boxes, err := h.svc.ListReturnRequests(c.Request.Context())
 	if err != nil {
@@ -1198,6 +1210,16 @@ func (h *Handler) listReturnRequests(c *gin.Context) {
 
 type approveBoxRequest struct {
 	BoxID string `json:"boxId"`
+}
+
+func (h *Handler) approveReturnAll(c *gin.Context) {
+	user, _ := CurrentUser(c)
+	count, err := h.svc.ApproveReturnAll(c.Request.Context(), user.ID)
+	if err != nil {
+		WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"approvedCount": count})
 }
 
 func (h *Handler) approveReturnBox(c *gin.Context) {

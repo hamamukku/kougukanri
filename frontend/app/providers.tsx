@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { ReactNode, useEffect, useState } from "react";
+import ConfirmProvider from "../src/components/ui/ConfirmProvider";
 
 export default function Providers({ children }: { children: ReactNode }) {
   const useMocks = process.env.NEXT_PUBLIC_USE_MOCKS === "1";
@@ -17,5 +18,5 @@ export default function Providers({ children }: { children: ReactNode }) {
   }, [useMocks]);
 
   if (!ready) return null;
-  return <>{children}</>;
+  return <ConfirmProvider>{children}</ConfirmProvider>;
 }

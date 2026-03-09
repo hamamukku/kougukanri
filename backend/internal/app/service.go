@@ -7,6 +7,7 @@ import (
 	stdErrors "errors"
 	"fmt"
 	"log"
+	"math/big"
 	"sort"
 	"strconv"
 	"strings"
@@ -234,6 +235,73 @@ func normalizeNullableSQLString(value *string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: trimmed, Valid: true}
+}
+
+func normalizeWarehouseNoText(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", true
+	}
+
+	var numeric big.Int
+	if _, ok := numeric.SetString(trimmed, 10); !ok {
+		return "", false
+	}
+
+	normalized := numeric.String()
+	if len(normalized) < 5 {
+		normalized = strings.Repeat("0", 5-len(normalized)) + normalized
+	}
+	return normalized, true
+}
+
+func normalizeWarehouseNoSQLString(value *string) (sql.NullString, error) {
+	if value == nil {
+		return sql.NullString{}, nil
+	}
+
+	normalized, ok := normalizeWarehouseNoText(*value)
+	if !ok {
+		return sql.NullString{}, apierr.InvalidRequest("warehouseNo must contain only digits", nil)
+	}
+	if normalized == "" {
+		return sql.NullString{}, nil
+	}
+	return sql.NullString{String: normalized, Valid: true}, nil
+}
+
+func normalizeWarehouseNoIdentity(value string) string {
+	normalized, ok := normalizeWarehouseNoText(value)
+	if !ok {
+		return normalizeImportIdentity(value)
+	}
+	return normalizeImportIdentity(normalized)
+}
+
+func updateWarehouseToolAssetNos(ctx context.Context, tx *sql.Tx, warehouseID uuid.UUID, warehouseNo string) error {
+	var invalidCount int
+	if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM tools
+WHERE warehouse_id = $1
+  AND asset_no !~ '^.+-[0-9]+$'
+`, warehouseID).Scan(&invalidCount); err != nil {
+		return err
+	}
+	if invalidCount > 0 {
+		return apierr.InvalidRequest("tool assetNo format is invalid", map[string]any{
+			"warehouseId": warehouseID,
+		})
+	}
+
+	_, err := tx.ExecContext(ctx, `
+UPDATE tools
+SET
+    asset_no = $2 || substring(asset_no FROM '(-[0-9]+)$'),
+    updated_at = NOW()
+WHERE warehouse_id = $1
+`, warehouseID, warehouseNo)
+	return err
 }
 
 func normalizeMode(mode string) string {
@@ -689,7 +757,16 @@ func (s *Service) CreateWarehouse(ctx context.Context, actorID uuid.UUID, name s
 		return db.Warehouse{}, apierr.InvalidRequest("name is required", nil)
 	}
 	normalizedAddress := normalizeNullableSQLString(address)
-	normalizedWarehouseNo := normalizeNullableSQLString(warehouseNo)
+	if warehouseNo == nil || strings.TrimSpace(*warehouseNo) == "" {
+		return db.Warehouse{}, apierr.InvalidRequest("warehouseNo is required", nil)
+	}
+	normalizedWarehouseNo, normalizeErr := normalizeWarehouseNoSQLString(warehouseNo)
+	if normalizeErr != nil {
+		return db.Warehouse{}, normalizeErr
+	}
+	if !normalizedWarehouseNo.Valid || strings.TrimSpace(normalizedWarehouseNo.String) == "" {
+		return db.Warehouse{}, apierr.InvalidRequest("warehouseNo is required", nil)
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -820,7 +897,14 @@ func (s *Service) UpdateWarehouse(ctx context.Context, actorID, warehouseID uuid
 
 	warehouseNo := warehouse.WarehouseNo
 	if in.WarehouseNo != nil {
-		warehouseNo = normalizeNullableSQLString(in.WarehouseNo)
+		if strings.TrimSpace(*in.WarehouseNo) == "" {
+			return db.Warehouse{}, apierr.InvalidRequest("warehouseNo cannot be empty", nil)
+		}
+		normalizedWarehouseNo, normalizeErr := normalizeWarehouseNoSQLString(in.WarehouseNo)
+		if normalizeErr != nil {
+			return db.Warehouse{}, normalizeErr
+		}
+		warehouseNo = normalizedWarehouseNo
 	}
 
 	updated, err := qtx.UpdateWarehouse(ctx, db.UpdateWarehouseParams{
@@ -834,6 +918,15 @@ func (s *Service) UpdateWarehouse(ctx context.Context, actorID, warehouseID uuid
 			return db.Warehouse{}, mapped
 		}
 		return db.Warehouse{}, err
+	}
+
+	if warehouse.WarehouseNo.String != updated.WarehouseNo.String {
+		if err := updateWarehouseToolAssetNos(ctx, tx, warehouseID, updated.WarehouseNo.String); err != nil {
+			if mapped := mapPQError(err); mapped != nil {
+				return db.Warehouse{}, mapped
+			}
+			return db.Warehouse{}, err
+		}
 	}
 
 	payload := map[string]any{
@@ -1266,8 +1359,14 @@ func normalizeImportExcelRows(rows []ImportExcelRow) ([]normalizedImportExcelRow
 		if normalized.ToolName == "" {
 			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "toolName", "toolName is required"))
 		}
-		if normalized.WarehouseNo != "" && strings.Contains(normalized.WarehouseNo, "-") {
-			rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseNo", "warehouseNo must not contain '-'"))
+		if normalized.WarehouseNo != "" {
+			normalizedWarehouseNo, ok := normalizeWarehouseNoText(normalized.WarehouseNo)
+			if !ok {
+				rowErrors = append(rowErrors, importExcelRowError(normalized.Row, "warehouseNo", "warehouseNo must contain only digits"))
+				normalized.WarehouseNo = ""
+			} else {
+				normalized.WarehouseNo = normalizedWarehouseNo
+			}
 		}
 		if normalized.PlaceName != "" && normalized.WarehouseNo != "" {
 			placeKey := normalizeImportIdentity(normalized.PlaceName)
@@ -1325,7 +1424,7 @@ func runImportWarehousesTools(ctx context.Context, store importWarehouseToolStor
 			Address:     importNullStringText(warehouse.Address),
 			WarehouseNo: importNullStringText(warehouse.WarehouseNo),
 		}
-		warehouseNoKey := normalizeImportIdentity(importNullStringText(warehouse.WarehouseNo))
+		warehouseNoKey := normalizeWarehouseNoIdentity(importNullStringText(warehouse.WarehouseNo))
 		if warehouseNoKey != "" {
 			if _, exists := warehouseNoOwners[warehouseNoKey]; !exists {
 				warehouseNoOwners[warehouseNoKey] = placeKey
@@ -1335,7 +1434,7 @@ func runImportWarehousesTools(ctx context.Context, store importWarehouseToolStor
 
 	for _, row := range normalizedRows {
 		placeKey := normalizeImportIdentity(row.PlaceName)
-		warehouseNoKey := normalizeImportIdentity(row.WarehouseNo)
+		warehouseNoKey := normalizeWarehouseNoIdentity(row.WarehouseNo)
 
 		if _, exists := seenOrder[placeKey]; !exists {
 			planOrder = append(planOrder, placeKey)
@@ -1344,7 +1443,7 @@ func runImportWarehousesTools(ctx context.Context, store importWarehouseToolStor
 
 		plan, exists := warehousePlans[placeKey]
 		if exists {
-			currentWarehouseNoKey := normalizeImportIdentity(plan.WarehouseNo)
+			currentWarehouseNoKey := normalizeWarehouseNoIdentity(plan.WarehouseNo)
 			if currentWarehouseNoKey == "" {
 				if ownerPlaceKey, ownerExists := warehouseNoOwners[warehouseNoKey]; ownerExists && ownerPlaceKey != placeKey {
 					rowErrors = append(rowErrors, importExcelRowError(row.Row, "warehouseNo", "warehouseNo conflicts with existing warehouse"))
@@ -2677,6 +2776,66 @@ func (s *Service) RequestReturn(ctx context.Context, userID uuid.UUID, loanItemI
 	return nil
 }
 
+func (s *Service) RequestReturnAll(ctx context.Context, userID uuid.UUID) (int, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	items, err := qtx.ListBorrowerPendingReturnItemsForUpdate(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if len(items) == 0 {
+		return 0, nil
+	}
+
+	now := time.Now().UTC()
+	boxIDSet := make(map[string]uuid.UUID)
+	loanItemIDs := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
+		if err := qtx.MarkLoanItemReturnRequested(ctx, db.MarkLoanItemReturnRequestedParams{
+			ID:                item.ID,
+			ReturnRequestedAt: now,
+			ReturnRequestedBy: userID,
+		}); err != nil {
+			return 0, err
+		}
+		boxIDSet[item.BoxID.String()] = item.BoxID
+		loanItemIDs = append(loanItemIDs, item.ID)
+	}
+
+	boxIDs := make([]uuid.UUID, 0, len(boxIDSet))
+	for _, boxID := range boxIDSet {
+		boxIDs = append(boxIDs, boxID)
+	}
+	sort.Slice(boxIDs, func(i, j int) bool {
+		return strings.Compare(boxIDs[i].String(), boxIDs[j].String()) < 0
+	})
+
+	actorID := userID
+	if err := s.auditTx(ctx, qtx, &actorID, "request_return_all", "loan_item", uuid.Nil, map[string]any{
+		"requestedCount": len(items),
+		"boxIds":         boxIDs,
+		"loanItemIds":    loanItemIDs,
+	}); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+
+	s.notifyBestEffort(ctx, "return_requested_all", map[string]any{
+		"borrowerId":     userID,
+		"requestedCount": len(items),
+		"boxIds":         boxIDs,
+	})
+	return len(items), nil
+}
+
 type ReturnRequestItem struct {
 	LoanItemID        uuid.UUID
 	ToolID            uuid.UUID
@@ -2778,6 +2937,62 @@ func (s *Service) ApproveReturnBox(ctx context.Context, adminID uuid.UUID, boxID
 	s.notifyBestEffort(ctx, "return_approved_box", map[string]any{
 		"boxId":         boxID,
 		"approvedCount": len(items),
+	})
+	return len(items), nil
+}
+
+func (s *Service) ApproveReturnAll(ctx context.Context, adminID uuid.UUID) (int, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	qtx := s.queries.WithTx(tx)
+
+	items, err := qtx.ListAllPendingRequestedItemsForUpdate(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if len(items) == 0 {
+		return 0, apierr.Conflict("NOTHING_TO_APPROVE", "no requested items to approve", nil)
+	}
+
+	now := time.Now().UTC()
+	boxIDSet := make(map[string]uuid.UUID)
+	for _, item := range items {
+		if err := qtx.ApproveLoanItemReturn(ctx, db.ApproveLoanItemReturnParams{
+			ID:               item.ID,
+			ReturnApprovedAt: now,
+			ReturnApprovedBy: adminID,
+		}); err != nil {
+			return 0, err
+		}
+		boxIDSet[item.BoxID.String()] = item.BoxID
+	}
+
+	boxIDs := make([]uuid.UUID, 0, len(boxIDSet))
+	for _, boxID := range boxIDSet {
+		boxIDs = append(boxIDs, boxID)
+	}
+	sort.Slice(boxIDs, func(i, j int) bool {
+		return strings.Compare(boxIDs[i].String(), boxIDs[j].String()) < 0
+	})
+
+	actorID := adminID
+	if err := s.auditTx(ctx, qtx, &actorID, "approve_return_all", "loan_item", uuid.Nil, map[string]any{
+		"approvedCount": len(items),
+		"boxIds":        boxIDs,
+	}); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+
+	s.notifyBestEffort(ctx, "return_approved_all", map[string]any{
+		"approvedCount": len(items),
+		"boxIds":        boxIDs,
 	})
 	return len(items), nil
 }
@@ -3002,6 +3217,8 @@ func mapPQError(err error) error {
 		switch pqErr.Constraint {
 		case "warehouses_name_key":
 			return apierr.Conflict("WAREHOUSE_NAME_DUPLICATE", "warehouse name already exists", nil)
+		case "warehouses_warehouse_no_key":
+			return apierr.Conflict("WAREHOUSE_NO_DUPLICATE", "warehouseNo already exists", nil)
 		case "departments_name_key":
 			return apierr.Conflict("DEPARTMENT_NAME_DUPLICATE", "department name already exists", nil)
 		case "tools_asset_no_key":

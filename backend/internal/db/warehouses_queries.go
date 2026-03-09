@@ -10,7 +10,13 @@ import (
 const listWarehousesQuery = `
 SELECT id, name, address, warehouse_no, created_at, updated_at
 FROM warehouses
-ORDER BY name ASC
+ORDER BY
+    CASE WHEN NULLIF(BTRIM(warehouse_no), '') IS NULL THEN 1 ELSE 0 END ASC,
+    CASE WHEN BTRIM(warehouse_no) ~ '^[0-9]+$' THEN 0 ELSE 1 END ASC,
+    CASE WHEN BTRIM(warehouse_no) ~ '^[0-9]+$' THEN CAST(BTRIM(warehouse_no) AS NUMERIC) END ASC,
+    LOWER(BTRIM(COALESCE(warehouse_no, ''))) ASC,
+    LOWER(name) ASC,
+    id ASC
 `
 
 func (q *Queries) ListWarehouses(ctx context.Context) ([]Warehouse, error) {
@@ -34,7 +40,13 @@ func (q *Queries) ListWarehouses(ctx context.Context) ([]Warehouse, error) {
 const listWarehousesForUpdateQuery = `
 SELECT id, name, address, warehouse_no, created_at, updated_at
 FROM warehouses
-ORDER BY name ASC
+ORDER BY
+    CASE WHEN NULLIF(BTRIM(warehouse_no), '') IS NULL THEN 1 ELSE 0 END ASC,
+    CASE WHEN BTRIM(warehouse_no) ~ '^[0-9]+$' THEN 0 ELSE 1 END ASC,
+    CASE WHEN BTRIM(warehouse_no) ~ '^[0-9]+$' THEN CAST(BTRIM(warehouse_no) AS NUMERIC) END ASC,
+    LOWER(BTRIM(COALESCE(warehouse_no, ''))) ASC,
+    LOWER(name) ASC,
+    id ASC
 FOR UPDATE
 `
 
@@ -66,7 +78,7 @@ INSERT INTO warehouses (
 ) VALUES (
     $1,
     NULLIF($2::text, ''),
-    NULLIF($3::text, ''),
+    $3,
     NOW(),
     NOW()
 )

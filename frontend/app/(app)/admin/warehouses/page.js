@@ -310,7 +310,7 @@ function AdminWarehousesPage() {
 
         <div>
           <div style={labelStyle}>管理番号（任意）</div>
-          <Input_1.default value={warehouseNo} onChange={function (e) { return setWarehouseNo(e.target.value); }} placeholder="例: WH-001" style={inputStyle}/>
+          <Input_1.default value={warehouseNo} onChange={function (e) { return setWarehouseNo(e.target.value); }} placeholder="例: 00001" style={inputStyle}/>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-start" }}>

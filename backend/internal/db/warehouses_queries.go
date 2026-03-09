@@ -31,6 +31,31 @@ func (q *Queries) ListWarehouses(ctx context.Context) ([]Warehouse, error) {
 	return items, rows.Err()
 }
 
+const listWarehousesForUpdateQuery = `
+SELECT id, name, address, warehouse_no, created_at, updated_at
+FROM warehouses
+ORDER BY name ASC
+FOR UPDATE
+`
+
+func (q *Queries) ListWarehousesForUpdate(ctx context.Context) ([]Warehouse, error) {
+	rows, err := q.db.QueryContext(ctx, listWarehousesForUpdateQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]Warehouse, 0)
+	for rows.Next() {
+		var i Warehouse
+		if err := rows.Scan(&i.ID, &i.Name, &i.Address, &i.WarehouseNo, &i.CreatedAt, &i.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
 const createWarehouseQuery = `
 INSERT INTO warehouses (
     name,

@@ -1,12 +1,11 @@
-// frontend/app/(app)/admin/import/page.tsx
 "use client";
 
 import { type ChangeEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Button from "../../../../src/components/ui/Button";
 import Input from "../../../../src/components/ui/Input";
-import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 import { clearAuthSession } from "../../../../src/utils/auth";
+import { apiFetchJson, getHttpErrorMessage, isHttpError } from "../../../../src/utils/http";
 
 type ImportResult = {
   warehousesCreated: number;
@@ -21,35 +20,44 @@ type RowError = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
+  placeName: "場所名",
+  place: "場所名",
+  warehouseName: "場所名",
+  address: "住所",
+  warehouseNo: "管理番号",
   toolName: "工具名",
   assetNo: "工具ID",
-  place: "場所",
   status: "状態",
-  warehouseName: "場所",
   baseStatus: "状態",
-  warehouseNo: "管理番号",
 };
 
 const ERROR_MESSAGE_LABELS: Record<string, string> = {
   "invalid import payload": "インポート内容に不備があります",
-  "required headers are missing": "必須列が不足しています",
-  "excel file is required": "Excelファイルが必要です",
-  "sheet not found": "指定したシートが見つかりません",
-  "place is required": "場所は必須です",
-  "status is required": "状態は必須です",
-  "status is invalid": "状態は 貸出可 / 貸出中 / 予約中 / 故障 / 修理中 を指定してください",
-  "warehouseName is required": "場所は必須です",
-  "warehouse name is required": "場所は必須です",
-  "assetNo is required": "工具IDは必須です",
-  "assetNo duplicates in the same file": "工具IDがファイル内で重複しています",
-  "assetNo already exists": "工具IDが既存データと重複しています",
-  "tool name is required": "工具名は必須です",
-  "warehouse number conflicts with existing data": "既存の管理番号と一致しません",
-  "warehouse_no conflicts with existing value": "既存の管理番号と一致しません",
+  "required headers are missing": "必須ヘッダーが不足しています",
+  "file is required": "ファイルが必要です",
+  "file must be .csv or .xlsx": "CSV / Excel ファイル（.csv, .xlsx）を選択してください",
+  "invalid csv file": "CSV を読み取れませんでした",
+  "invalid xlsx file": "XLSX を読み取れませんでした",
+  "xlsx has no sheets": "XLSX にシートがありません",
+  "sheet is invalid": "指定したシートが見つかりません",
+  "no import rows found": "取込対象の行がありません",
+  "placeName is required": "場所名は必須です",
+  "place is required": "場所名は必須です",
+  "warehouseName is required": "場所名は必須です",
+  "warehouse name is required": "場所名は必須です",
+  "address is required": "住所は必須です",
   "warehouseNo is required": "管理番号は必須です",
   "warehouseNo must not contain '-'": "管理番号に「-」は使用できません",
-  "warehouseNo conflicts in the same file": "管理番号の割当がファイル内で衝突しています",
-  "warehouseNo conflicts with existing warehouse": "管理番号が既存データと衝突しています",
+  "warehouseNo conflicts in the same file": "同じ場所名に異なる管理番号が含まれています",
+  "placeName conflicts in the same file": "同じ管理番号に異なる場所名が含まれています",
+  "placeName conflicts with existing warehouse": "同じ管理番号を持つ別名の場所が既存データにあります",
+  "warehouseNo conflicts with existing warehouse": "既存の場所名に別の管理番号が設定されています",
+  "warehouse number conflicts with existing data": "既存の場所名に別の管理番号が設定されています",
+  "warehouse_no conflicts with existing value": "既存の場所名に別の管理番号が設定されています",
+  "toolName is required": "工具名は必須です",
+  "tool name is required": "工具名は必須です",
+  "assetNo already exists": "工具IDの自動採番で競合が発生しました",
+  "warehouseNo is required for assetNo generation": "管理番号が未設定のため工具IDを自動採番できません",
   "internal server error": "サーバーエラーが発生しました",
 };
 
@@ -191,7 +199,6 @@ export default function AdminImportPage() {
     textAlign: "center",
   };
 
-  // ✅ 取込実行ボタン：黒
   const buttonStyle: React.CSSProperties = {
     minWidth: 160,
     height: 52,
@@ -218,15 +225,15 @@ export default function AdminImportPage() {
       }}
     >
       <div style={{ width: "100%", maxWidth: 760 }}>
-        <h1 style={{ fontSize: 30, margin: "0 0 18px", textAlign: "center" }}>Excel取込</h1>
+        <h1 style={{ fontSize: 30, margin: "0 0 18px", textAlign: "center" }}>ファイル取込</h1>
 
         <section className="card-surface" style={{ padding: 16, display: "grid", gap: 14 }}>
           <div>
-            <div style={labelStyle}>Excelファイル（.xlsx）</div>
+            <div style={labelStyle}>CSV / Excel ファイル（.csv, .xlsx）</div>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={onFileChange}
               style={{ display: "none" }}
             />
@@ -240,18 +247,14 @@ export default function AdminImportPage() {
 
           <div>
             <div style={labelStyle}>シート名（任意）</div>
-            <Input
-              value={sheet}
-              onChange={(e) => setSheet(e.target.value)}
-              placeholder="未入力の場合は先頭シートを使用します"
-              style={inputStyle}
-            />
+            <Input value={sheet} onChange={(e) => setSheet(e.target.value)} placeholder="未入力の場合は先頭シートを使用します" style={inputStyle} />
           </div>
 
           <div style={noteStyle}>
-            <div style={{ marginBottom: 4 }}>・ヘッダー行を使う場合は「工具名 / 工具ID / 場所 / 状態」で作成してください</div>
-            <div style={{ marginBottom: 4 }}>・4列すべて必須です</div>
-            <div>・状態は 貸出可 / 貸出中 / 予約中 / 故障 / 修理中 に対応します</div>
+            <div style={{ marginBottom: 4 }}>ヘッダーは 場所名 / 住所 / 管理番号 / 工具名</div>
+            <div style={{ marginBottom: 4 }}>工具IDは自動採番です</div>
+            <div style={{ marginBottom: 4 }}>管理番号にハイフンは使用不可です</div>
+            <div>XLSX の場合のみシート名指定可</div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "center" }}>
@@ -274,9 +277,7 @@ export default function AdminImportPage() {
           <section className="card-surface" style={{ marginTop: 12, padding: 16 }}>
             <p style={{ color: "var(--danger)", margin: 0, fontSize: 16, textAlign: "center" }}>エラー: {err}</p>
             {missingHeaders.length > 0 ? (
-              <p style={{ marginTop: 10, marginBottom: 0, fontSize: 15, textAlign: "center" }}>
-                不足列: {missingHeaders.join(" / ")}
-              </p>
+              <p style={{ marginTop: 10, marginBottom: 0, fontSize: 15, textAlign: "center" }}>不足ヘッダー: {missingHeaders.join(" / ")}</p>
             ) : null}
             {rowErrors.length > 0 ? (
               <ul style={{ marginTop: 10, marginBottom: 0, paddingLeft: 18, fontSize: 15 }}>
